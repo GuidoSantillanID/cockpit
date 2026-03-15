@@ -4,13 +4,13 @@
 TEAL='\033[38;2;148;226;213m'
 PEACH='\033[38;2;250;179;135m'
 GREEN='\033[38;2;166;227;161m'
-RED='\033[38;2;243;139;168m'
+BLUE='\033[38;2;137;180;250m'    # Catppuccin blue #89b4fa
 OVERLAY='\033[38;2;108;112;134m'
 TEXT='\033[38;2;205;214;244m'
 RESET='\033[0m'
 
-# Colored dot indicators (traffic-light: red=running, green=done, gray=none)
-DOT_RUNNING="${RED}●${RESET}"
+# Colored dot indicators: blue=running, green=done, gray=none
+DOT_RUNNING="${BLUE}●${RESET}"
 DOT_DONE="${GREEN}●${RESET}"
 DOT_NONE="${OVERLAY}·${RESET}"
 
@@ -89,21 +89,24 @@ build_list() {
     printf "%b %b ${TEXT}%-22s${RESET}${OVERLAY} · %s${RESET}\t%s\n" \
       "${PEACH}${idx}${RESET}" "$dot" "$name" "$rel" "s:${name}"
 
-    # Window rows (indented)
-    while IFS='|' read -r win_idx win_name win_cmd; do
-      local wst wdot clean_name detail
+    # Window rows with composite labels (1a, 1b, 2a, ...)
+    local win_counter=0
+    while IFS='|' read -r win_idx win_name win_cmd win_path; do
+      win_counter=$(( win_counter + 1 ))
+      local letter wst wdot clean_name detail dir_name
+      letter=$(printf "\\x$(printf '%02x' $((96 + win_counter)))")
       wst=$(window_claude_status "${name}:${win_idx}")
       wdot=$(status_dot "$wst")
       clean_name=$(strip_claude_prefix "$win_name")
+      dir_name=$(basename "$win_path")
       case "$wst" in
-        running) detail="running" ;;
-        done)    detail="done"    ;;
-        *)       detail="$win_cmd" ;;
+        running) detail="running · $dir_name" ;;
+        done)    detail="done · $dir_name"    ;;
+        *)       detail="$dir_name"           ;;
       esac
-      # Window row: display \t w:session_name:win_idx
-      printf "   ${PEACH}%s:${RESET} %b ${TEXT}%-18s${RESET}${OVERLAY} · %s${RESET}\t%s\n" \
-        "$win_idx" "$wdot" "$clean_name" "$detail" "w:${name}:${win_idx}"
-    done < <(tmux list-windows -t "$name" -F '#{window_index}|#{window_name}|#{pane_current_command}' 2>/dev/null)
+      printf " %b %b ${TEXT}%-18s${RESET}${OVERLAY} · %s${RESET}\t%s\n" \
+        "${PEACH}${idx}${letter}${RESET}" "$wdot" "$clean_name" "$detail" "w:${name}:${win_idx}"
+    done < <(tmux list-windows -t "$name" -F '#{window_index}|#{window_name}|#{pane_current_command}|#{pane_current_path}' 2>/dev/null)
 
   done < <(tmux list-sessions -F '#{session_name}|#{session_last_attached}' 2>/dev/null)
 }
@@ -115,19 +118,20 @@ preview_session() {
   printf "${TEAL}%s${RESET}\n${OVERLAY}%s${RESET}\n\n" "$session" "$path"
 
   printf "${PEACH}WINDOWS${RESET}\n"
-  while IFS='|' read -r win_idx win_name win_cmd; do
-    local wst wdot clean_name detail
+  while IFS='|' read -r win_idx win_name win_cmd win_path; do
+    local wst wdot clean_name detail dir_name
     wst=$(window_claude_status "${session}:${win_idx}")
     wdot=$(status_dot "$wst")
     clean_name=$(strip_claude_prefix "$win_name")
+    dir_name=$(basename "$win_path")
     case "$wst" in
-      running) detail="running" ;;
-      done)    detail="done"    ;;
-      *)       detail="$win_cmd" ;;
+      running) detail="running · $dir_name" ;;
+      done)    detail="done · $dir_name"    ;;
+      *)       detail="$dir_name"           ;;
     esac
     printf "${PEACH}%s:${RESET} %b ${TEXT}%s${RESET} ${OVERLAY}· %s${RESET}\n" \
       "$win_idx" "$wdot" "$clean_name" "$detail"
-  done < <(tmux list-windows -t "$session" -F '#{window_index}|#{window_name}|#{pane_current_command}' 2>/dev/null)
+  done < <(tmux list-windows -t "$session" -F '#{window_index}|#{window_name}|#{pane_current_command}|#{pane_current_path}' 2>/dev/null)
 
   local win_count attached created now age created_rel attach_str
   win_count=$(tmux list-windows -t "$session" 2>/dev/null | wc -l | tr -d ' ')
@@ -168,16 +172,15 @@ script_path="$(realpath "$0")"
 selected=$(build_list | fzf \
   --ansi \
   --no-sort \
-  --layout=reverse \
+  --layout=reverse-list \
   --delimiter=$'\t' \
   --with-nth=1 \
   --preview="$script_path --preview {2}" \
   --preview-window='right:45%:wrap' \
-  --bind='ctrl-/:toggle-preview' \
   --bind="ctrl-d:execute-silent(tmux kill-session -t \$(echo {2} | sed 's/^[sw]://;s/:.*//'))+reload($script_path --list)" \
   --prompt='  sessions  ❯ ' \
   --pointer='▶' \
-  --header='enter: switch  ctrl-/: preview  ctrl-d: kill session' \
+  --header='enter: switch  ctrl-d: kill session' \
   --color='bg+:#313244,bg:#1e1e2e,spinner:#f5e0dc,hl:#f38ba8' \
   --color='fg:#cdd6f4,header:#f38ba8,info:#cba6f7,pointer:#f5e0dc' \
   --color='marker:#b4befe,fg+:#cdd6f4,prompt:#cba6f7,hl+:#f38ba8' \
