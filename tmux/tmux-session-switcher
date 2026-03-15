@@ -77,17 +77,15 @@ build_list() {
   local now
   now=$(date +%s)
   local idx=0
-  while IFS='|' read -r name last_activity; do
+  while IFS='|' read -r _created name last_activity; do
     idx=$(( idx + 1 ))
     local age=$(( now - last_activity ))
-    local rel st dot
+    local rel
     rel=$(relative_time "$age")
-    st=$(session_claude_status "$name")
-    dot=$(status_dot "$st")
 
     # Session row: display \t s:session_name
     printf "%b %b ${TEXT}%-22s${RESET}${OVERLAY} · %s${RESET}\t%s\n" \
-      "${PEACH}${idx}${RESET}" "$dot" "$name" "$rel" "s:${name}"
+      "${PEACH}${idx}${RESET}" "$DOT_NONE" "$name" "$rel" "s:${name}"
 
     # Window rows with composite labels (1a, 1b, 2a, ...)
     local win_counter=0
@@ -108,7 +106,7 @@ build_list() {
         "${PEACH}${idx}${letter}${RESET}" "$wdot" "$clean_name" "$detail" "w:${name}:${win_idx}"
     done < <(tmux list-windows -t "$name" -F '#{window_index}|#{window_name}|#{pane_current_command}|#{pane_current_path}' 2>/dev/null)
 
-  done < <(tmux list-sessions -F '#{session_name}|#{session_last_attached}' 2>/dev/null)
+  done < <(tmux list-sessions -F '#{session_created}|#{session_name}|#{session_last_attached}' 2>/dev/null | sort -t'|' -k1 -n)
 }
 
 preview_session() {
