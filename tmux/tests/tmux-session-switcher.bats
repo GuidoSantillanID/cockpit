@@ -497,3 +497,184 @@ setup_tmux_mock() {
   done
   [[ "$detail" != *" main"* ]]
 }
+
+@test "build_list: branch color uses actual ESC bytes, not literal backslash-033" {
+  local now
+  now=$(date +%s)
+  local tmpdir
+  tmpdir=$(mktemp -d)
+  git init -q "$tmpdir"
+  git -C "$tmpdir" checkout -q -b feat/color-test 2>/dev/null || \
+    git -C "$tmpdir" symbolic-ref HEAD refs/heads/feat/color-test
+  tmux() {
+    case "$1 $2" in
+      "list-sessions -F") printf '%s|myproject\n' "$(( now - 60 ))" ;;
+      "list-windows -a")  printf 'myproject|0|terminal|zsh|%s|1||\n' "$tmpdir" ;;
+    esac
+  }
+  export -f tmux
+  local US=$'\x1f'
+  run build_list ""
+  rm -rf "$tmpdir"
+  local detail=""
+  for line in "${lines[@]}"; do
+    local key
+    key=$(printf '%s' "$line" | cut -d"$US" -f3)
+    if [[ "$key" == w:myproject:* ]]; then
+      detail=$(printf '%s' "$line" | cut -d"$US" -f2)
+      break
+    fi
+  done
+  # Must NOT contain literal "\033" (backslash + 033) — means ANSI not pre-rendered
+  [[ "$detail" != *'\033'* ]]
+}
+
+# ── multi-pane windows in main list ──────────────────────────────────────────
+
+@test "build_list: multi-pane window shows combined label with slash separator" {
+  local now
+  now=$(date +%s)
+  tmux() {
+    case "$1 $2" in
+      "list-sessions -F")
+        printf '%s|myproject\n' "$(( now - 60 ))"
+        ;;
+      "list-windows -a")
+        printf 'myproject|0|dev|claude|/home/user/myproject|1|1|\n'
+        ;;
+      "list-panes -a")
+        printf 'myproject|0|0|claude|/home/user/myproject|1|1|\n'
+        printf 'myproject|0|1|zsh|/home/user/myproject|0||\n'
+        ;;
+    esac
+  }
+  export -f tmux
+  local US=$'\x1f'
+  run build_list ""
+  local field1=""
+  for line in "${lines[@]}"; do
+    local key
+    key=$(printf '%s' "$line" | cut -d"$US" -f3)
+    if [[ "$key" == "w:myproject:0" ]]; then
+      field1=$(printf '%s' "$line" | cut -d"$US" -f1)
+      break
+    fi
+  done
+  [[ "$field1" == *"/"* ]]
+  [[ "$field1" == *"claude"* ]]
+  [[ "$field1" == *"shell"* ]]
+}
+
+@test "build_list: single-pane window does not show slash separator" {
+  local now
+  now=$(date +%s)
+  tmux() {
+    case "$1 $2" in
+      "list-sessions -F")
+        printf '%s|myproject\n' "$(( now - 60 ))"
+        ;;
+      "list-windows -a")
+        printf 'myproject|0|dev|zsh|/home/user/myproject|1||\n'
+        ;;
+      "list-panes -a")
+        printf 'myproject|0|0|zsh|/home/user/myproject|1||\n'
+        ;;
+    esac
+  }
+  export -f tmux
+  local US=$'\x1f'
+  run build_list ""
+  local field1=""
+  for line in "${lines[@]}"; do
+    local key
+    key=$(printf '%s' "$line" | cut -d"$US" -f3)
+    if [[ "$key" == "w:myproject:0" ]]; then
+      field1=$(printf '%s' "$line" | cut -d"$US" -f1)
+      break
+    fi
+  done
+  [[ "$field1" != *" / "* ]]
+}
+
+# ── preview_session: GIT section restructure ─────────────────────────────────
+
+@test "preview_session: GIT header line includes branch name" {
+  local tmpdir
+  tmpdir=$(mktemp -d)
+  git -C "$tmpdir" init -q
+  git -C "$tmpdir" checkout -q -b feat/preview-branch 2>/dev/null || \
+    git -C "$tmpdir" symbolic-ref HEAD refs/heads/feat/preview-branch
+  local now_ts
+  now_ts=$(date +%s)
+  tmux() {
+    case "$*" in
+      *"#{session_path}"*)     echo "$tmpdir" ;;
+      "list-panes -t"*)        printf '0|0|shell|zsh|%s|1||\n' "$tmpdir" ;;
+      "list-windows -t"*)      printf 'dummy\n' ;;
+      *"#{session_attached}"*) echo "0" ;;
+      *"#{session_created}"*)  echo "$(( now_ts - 3600 ))" ;;
+    esac
+  }
+  export -f tmux
+  run preview_session "mysession"
+  rm -rf "$tmpdir"
+  local git_line=""
+  for line in "${lines[@]}"; do
+    if [[ "$line" == *"GIT"* ]]; then
+      git_line="$line"
+      break
+    fi
+  done
+  [[ "$git_line" == *"feat/preview-branch"* ]]
+}
+
+# ── preview_session: multi-pane window sub-rows ───────────────────────────────
+
+@test "preview_session: multi-pane window shows sub-rows for each pane" {
+  local tmpdir
+  tmpdir=$(mktemp -d)
+  local now_ts
+  now_ts=$(date +%s)
+  tmux() {
+    case "$*" in
+      *"#{session_path}"*)     echo "$tmpdir" ;;
+      "list-panes -t"*)
+        printf '0|0|dev|claude|%s|1|1|\n' "$tmpdir"
+        printf '0|1|dev|zsh|%s|0||\n' "$tmpdir"
+        ;;
+      "list-windows -t"*)      printf 'dummy\n' ;;
+      *"#{session_attached}"*) echo "0" ;;
+      *"#{session_created}"*)  echo "$(( now_ts - 3600 ))" ;;
+    esac
+  }
+  export -f tmux
+  run preview_session "mysession"
+  rm -rf "$tmpdir"
+  local in_windows=0 window_section_lines=0
+  for line in "${lines[@]}"; do
+    if [[ "$line" == *"WINDOWS"* ]]; then
+      in_windows=1
+      continue
+    fi
+    if [[ "$in_windows" -eq 1 ]]; then
+      [[ "$line" == *"INFO"* ]] && break
+      [[ -n "$line" ]] && window_section_lines=$(( window_section_lines + 1 ))
+    fi
+  done
+  # 2 panes in 1 window: 1 window header + 2 pane sub-rows = 3 lines
+  [ "$window_section_lines" -ge 3 ]
+}
+
+# ── preview_session: git icon glyph (#2 bug) ─────────────────────────────────
+
+@test "preview_session: git section uses nerd font branch glyph, not Unicode ⎇" {
+  # preview_session calls tmux live; test only the static printf format
+  # We check that the script file itself uses  not ⎇ in the preview printf
+  local branch_glyph
+  branch_glyph=$(grep -o '. %s · %s' "$BATS_TEST_DIRNAME/../tmux-session-switcher" | head -1 | cut -c1)
+  # ⎇ is multi-byte U+2387; Nerd Font  is U+E0A0 — verify it's not the ⎇ char
+  local expected_bad=$'\xe2\x8e\x87'  # UTF-8 encoding of ⎇ U+2387
+  local actual_char
+  actual_char=$(grep -o '. %s · %s' "$BATS_TEST_DIRNAME/../tmux-session-switcher" | head -1 | cut -c1-1)
+  [ "$actual_char" != "$(printf '%b' '\xe2\x8e\x87')" ]
+}

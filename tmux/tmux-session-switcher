@@ -53,6 +53,15 @@ strip_claude_prefix() {
   echo "${1#✳ }"
 }
 
+# Human-readable label for a pane command: shells → "shell", others pass through
+pane_label_for_cmd() {
+  local cmd=$1
+  case "$cmd" in
+    zsh|bash|fish) echo "shell" ;;
+    *)             echo "$cmd" ;;
+  esac
+}
+
 # Claude status from pre-fetched values: "running", "done", or "none"
 # $1 = @is_claude_running value, $2 = @claude_done value
 window_claude_status() {
@@ -101,9 +110,10 @@ build_list() {
   local now sessions_raw windows_raw
   now=$(date +%s)
 
-  # Two batched tmux calls instead of N+NM per-session/window calls
+  # Three batched tmux calls instead of N+NM per-session/window calls
   sessions_raw=$(tmux list-sessions -F '#{session_last_attached}|#{session_name}' 2>/dev/null)
   windows_raw=$(tmux list-windows -a -F '#{session_name}|#{window_index}|#{window_name}|#{pane_current_command}|#{pane_current_path}|#{window_active}|#{@is_claude_running}|#{@claude_done}' 2>/dev/null)
+  panes_raw=$(tmux list-panes -a -F '#{session_name}|#{window_index}|#{pane_index}|#{pane_current_command}|#{pane_current_path}|#{pane_active}|#{@is_claude_running}|#{@claude_done}' 2>/dev/null)
 
   # Separate _default from all others, then sort each group alphabetically
   local default_entry active_entries inactive_entries
@@ -195,12 +205,30 @@ build_list() {
       if [[ "$clean_name" == "$name" && "$win_cmd" =~ ^(zsh|bash|fish)$ ]]; then
         clean_name="shell"
       fi
+
+      # Multi-pane: check panes_raw for this session+window
+      local window_panes pane_count
+      window_panes=$(printf '%s\n' "$panes_raw" | \
+        awk -F'|' -v s="$name" -v w="$win_idx" '$1 == s && $2 == w { for(i=3;i<=NF;i++) printf "%s%s", $i, (i<NF?"|":"\n") }')
+      pane_count=$(printf '%s\n' "$window_panes" | awk 'NF>0 {n++} END {print n+0}')
+
+      if [[ "$pane_count" -gt 1 ]]; then
+        local combined_label=""
+        while IFS='|' read -r _pidx p_cmd _p_path _pactive _p_running _p_done; do
+          [[ -z "$p_cmd" ]] && continue
+          local plabel
+          plabel=$(pane_label_for_cmd "$p_cmd")
+          combined_label="${combined_label:+$combined_label / }$plabel"
+        done <<< "$window_panes"
+        clean_name="$combined_label"
+      fi
+
       dir_name=$(basename "$win_path")
       # Git branch — shown in blue when not main/master
       branch=$(git_branch_for_path "$win_path")
       branch_str=""
       if [[ -n "$branch" && "$branch" != "main" && "$branch" != "master" ]]; then
-        branch_str=" ${BLUE}${branch}${RESET}"
+        branch_str=$(printf '%b' " ${BLUE}${branch}${RESET}")
       fi
       # Column order: repo [branch] · status
       case "$wst" in
@@ -232,26 +260,59 @@ preview_session() {
 
   # Git info
   if git -C "$session_path" rev-parse --is-inside-work-tree &>/dev/null 2>&1; then
-    local branch dirty status_str last_commit
+    local branch dirty status_str commit_msg commit_ts commit_age_str status_color
     branch=$(git -C "$session_path" branch --show-current 2>/dev/null)
     dirty=$(git -C "$session_path" status --porcelain 2>/dev/null | wc -l | tr -d ' ')
     status_str="clean"
     [[ "$dirty" -gt 0 ]] && status_str="${dirty} changed"
-    printf "${PEACH}GIT${RESET}\n"
-    printf "${OVERLAY}⎇ %s · %s${RESET}\n" "$branch" "$status_str"
-    last_commit=$(git -C "$session_path" log -1 --format='%s (%cr)' 2>/dev/null)
-    [[ -n "$last_commit" ]] && printf "${OVERLAY}  %s${RESET}\n" "$last_commit"
+    printf "${PEACH}GIT${RESET}  ${BLUE}%s${RESET}\n" "$branch"
+    commit_msg=$(git -C "$session_path" log -1 --format='%s' 2>/dev/null)
+    commit_ts=$(git -C "$session_path" log -1 --format='%ct' 2>/dev/null)
+    commit_age_str=""
+    if [[ -n "$commit_ts" ]]; then
+      local _now_git
+      _now_git=$(date +%s)
+      commit_age_str=$(relative_time $(( _now_git - commit_ts )))
+    fi
+    if [[ "$dirty" -gt 0 ]]; then status_color="${PEACH}"; else status_color="${GREEN}"; fi
+    if [[ -n "$commit_msg" ]]; then
+      printf "${status_color}%s${OVERLAY} · %s" "$status_str" "$commit_msg"
+      [[ -n "$commit_age_str" ]] && printf " (%s ago)" "$commit_age_str"
+      printf "${RESET}\n"
+    else
+      printf "${status_color}%s${RESET}\n" "$status_str"
+    fi
     printf "\n"
   fi
 
   printf "${PEACH}WINDOWS${RESET}\n"
-  while IFS='|' read -r win_idx win_name win_cmd win_path _active w_running w_done; do
+  local panes_data
+  panes_data=$(tmux list-panes -t "$session" -F '#{window_index}|#{pane_index}|#{window_name}|#{pane_current_command}|#{pane_current_path}|#{pane_active}|#{@is_claude_running}|#{@claude_done}' 2>/dev/null)
+  local window_indices
+  window_indices=$(printf '%s\n' "$panes_data" | awk -F'|' 'NF>0 {print $1}' | sort -un)
+
+  while IFS= read -r windex; do
+    [[ -z "$windex" ]] && continue
+    local win_panes pane_count
+    win_panes=$(printf '%s\n' "$panes_data" | awk -F'|' -v w="$windex" '$1 == w')
+    pane_count=$(printf '%s\n' "$win_panes" | awk 'NF>0 {n++} END {print n+0}')
+
+    # Prefer active pane for window header info; fall back to first pane
+    local active_pane
+    active_pane=$(printf '%s\n' "$win_panes" | awk -F'|' '
+      NR==1 { first=$0 }
+      $6=="1" { print; found=1; exit }
+      END { if (!found) print first }
+    ')
+
+    local win_idx pane_idx win_name win_cmd win_path _active w_running w_done
+    IFS='|' read -r win_idx pane_idx win_name win_cmd win_path _active w_running w_done <<< "$active_pane"
+
     local wst wicon clean_name detail dir_name
     wst=$(window_claude_status "$w_running" "$w_done")
     wicon=$(window_icon "$wst" "$win_cmd")
     clean_name=$(strip_claude_prefix "$win_name")
     dir_name=$(basename "$win_path")
-    # Column order: repo · status
     case "$wst" in
       running) detail="$dir_name · running" ;;
       done)    detail="$dir_name · done"    ;;
@@ -259,10 +320,20 @@ preview_session() {
     esac
     printf "${PEACH}%s:${RESET} %b ${TEXT}%s${RESET} ${OVERLAY}· %s${RESET}\n" \
       "$win_idx" "$wicon" "$clean_name" "$detail"
-  done < <(tmux list-windows -t "$session" -F '#{window_index}|#{window_name}|#{pane_current_command}|#{pane_current_path}|#{window_active}|#{@is_claude_running}|#{@claude_done}' 2>/dev/null)
+
+    if [[ "$pane_count" -gt 1 ]]; then
+      while IFS='|' read -r _widx _pidx _wname p_cmd p_path _pactive p_running p_done; do
+        local p_wst p_wicon p_dir
+        p_wst=$(window_claude_status "$p_running" "$p_done")
+        p_wicon=$(window_icon "$p_wst" "$p_cmd")
+        p_dir=$(basename "$p_path")
+        printf "   %b ${TEXT}%s${RESET}\n" "$p_wicon" "$p_dir"
+      done <<< "$win_panes"
+    fi
+  done <<< "$window_indices"
 
   local win_count attached created now age created_rel attach_str
-  win_count=$(tmux list-windows -t "$session" 2>/dev/null | wc -l | tr -d ' ')
+  win_count=$(printf '%s\n' "$panes_data" | awk -F'|' 'NF>0 && !seen[$1]++ {n++} END {print n+0}')
   attached=$(tmux display-message -p -t "$session" '#{session_attached}' 2>/dev/null)
   created=$(tmux display-message -p -t "$session" '#{session_created}' 2>/dev/null)
   now=$(date +%s)
@@ -315,12 +386,13 @@ selected=$(printf '%s' "$list_body" | fzf \
   --with-nth=1,2 \
   --nth=1 \
   --preview="$script_path --preview {3}" \
-  --preview-window='right:45%:wrap' \
+  --preview-window='right:35%:wrap' \
   --bind="start:pos($start_pos)" \
   --bind="ctrl-d:execute-silent(tmux kill-session -t \$(echo {3} | sed 's/^[sw]://;s/:.*//'))+reload($script_path --list)" \
+  --bind='ctrl-/:toggle-preview' \
   --prompt='  sessions  ❯ ' \
   --pointer='▶' \
-  --header='enter: switch  ctrl-d: kill session' \
+  --header='enter: switch  ctrl-d: kill  ctrl-/: preview' \
   --color='bg+:#313244,bg:#1e1e2e,spinner:#f5e0dc,hl:#f38ba8' \
   --color='fg:#cdd6f4,header:#f38ba8,info:#cba6f7,pointer:#f5e0dc' \
   --color='marker:#b4befe,fg+:#cdd6f4,prompt:#cba6f7,hl+:#f38ba8' \
