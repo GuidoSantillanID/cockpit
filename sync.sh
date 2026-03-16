@@ -22,6 +22,8 @@ copy_if_exists() {
   echo "  updated $dest"
 }
 
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+
 echo "Updating config backups from local machine..."
 echo ""
 
@@ -61,3 +63,5 @@ fi
 
 echo ""
 git -C "$REPO_DIR" diff --stat . || true
+
+fi  # end BASH_SOURCE guard

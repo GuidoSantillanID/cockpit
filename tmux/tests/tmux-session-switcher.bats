@@ -139,6 +139,14 @@ setup_tmux_mock() {
         printf 'zebra|0|dev|zsh|/home/user/projectZ|1||\n'
         printf '_default|0|dev|zsh|/home/user/default|1||\n'
         ;;
+      "list-panes -a")
+        # sessionA has 2 panes (claude + zsh) to exercise multi-pane combined label
+        printf 'sessionA|0|0|claude|/home/user/projectA|1||\n'
+        printf 'sessionA|0|1|zsh|/home/user/projectA|0||\n'
+        printf 'sessionB|0|0|zsh|/home/user/projectB|1||\n'
+        printf 'zebra|0|0|zsh|/home/user/projectZ|1||\n'
+        printf '_default|0|0|zsh|/home/user/default|1||\n'
+        ;;
     esac
   }
   export -f tmux
@@ -678,4 +686,137 @@ setup_tmux_mock() {
   local actual_char
   actual_char=$(grep -o '. %s · %s' "$BATS_TEST_DIRNAME/../tmux-session-switcher" | head -1 | cut -c1-1)
   [ "$actual_char" != "$(printf '%b' '\xe2\x8e\x87')" ]
+}
+
+# ── pane_label_for_cmd ────────────────────────────────────────────────────────
+
+@test "pane_label_for_cmd: zsh returns 'shell'" {
+  run pane_label_for_cmd "zsh"
+  [ "$output" = "shell" ]
+}
+
+@test "pane_label_for_cmd: bash returns 'shell'" {
+  run pane_label_for_cmd "bash"
+  [ "$output" = "shell" ]
+}
+
+@test "pane_label_for_cmd: fish returns 'shell'" {
+  run pane_label_for_cmd "fish"
+  [ "$output" = "shell" ]
+}
+
+@test "pane_label_for_cmd: node passes through unchanged" {
+  run pane_label_for_cmd "node"
+  [ "$output" = "node" ]
+}
+
+# ── window_icon ───────────────────────────────────────────────────────────────
+
+@test "window_icon: running status returns non-empty string" {
+  run window_icon "running" "zsh"
+  [ -n "$output" ]
+}
+
+@test "window_icon: done status returns different output from running" {
+  local running_out done_out
+  running_out=$(window_icon "running" "zsh")
+  done_out=$(window_icon "done" "zsh")
+  [ "$running_out" != "$done_out" ]
+}
+
+@test "window_icon: none+zsh returns different output from none+node" {
+  local shell_out other_out
+  shell_out=$(window_icon "none" "zsh")
+  other_out=$(window_icon "none" "node")
+  [ "$shell_out" != "$other_out" ]
+}
+
+# ── parse_session ─────────────────────────────────────────────────────────────
+
+@test "parse_session: s:myapp extracts myapp" {
+  run parse_session "s:myapp"
+  [ "$output" = "myapp" ]
+}
+
+@test "parse_session: w:myapp:0 extracts myapp" {
+  run parse_session "w:myapp:0"
+  [ "$output" = "myapp" ]
+}
+
+# ── panes_raw variable scope ──────────────────────────────────────────────────
+
+@test "build_list: panes_raw does not leak to outer scope" {
+  setup_tmux_mock
+  panes_raw="sentinel"
+  build_list "" > /dev/null
+  [ "$panes_raw" = "sentinel" ]
+}
+
+# ── build_list: setup_tmux_mock multi-pane data ───────────────────────────────
+
+@test "build_list: multi-pane data in mock produces combined label for sessionA window" {
+  setup_tmux_mock
+  local US=$'\x1f'
+  run build_list ""
+  local field1=""
+  for line in "${lines[@]}"; do
+    local key
+    key=$(printf '%s' "$line" | cut -d"$US" -f3)
+    if [[ "$key" == "w:sessionA:0" ]]; then
+      field1=$(printf '%s' "$line" | cut -d"$US" -f1)
+      break
+    fi
+  done
+  [[ "$field1" == *"/"* ]]
+  [[ "$field1" == *"claude"* ]]
+  [[ "$field1" == *"shell"* ]]
+}
+
+# ── preview_session: error handling ──────────────────────────────────────────
+
+@test "preview_session: non-existent session exits cleanly" {
+  tmux() {
+    case "$*" in
+      *"#{session_path}"*)     echo "/tmp/cockpit-test-no-such-path-$$" ;;
+      "list-panes -s -t"*)     : ;;
+      *"#{session_attached}"*) echo "0" ;;
+      *"#{session_created}"*)  echo "$(( $(date +%s) - 3600 ))" ;;
+      *) return 1 ;;
+    esac
+  }
+  export -f tmux
+  run preview_session "nonexistent-session-xyz"
+  [ "$status" -eq 0 ]
+}
+
+# ── handle_selection: robustness ─────────────────────────────────────────────
+
+@test "handle_selection: does not call select-window when switch-client fails" {
+  local tmpdir
+  tmpdir=$(mktemp -d)
+  export tmpdir
+  tmux() {
+    echo "tmux $*" >> "$tmpdir/tmux-calls.log"
+    case "$1" in
+      switch-client) return 1 ;;
+      *) return 0 ;;
+    esac
+  }
+  export -f tmux
+  run handle_selection "w:dead-session:1"
+  ! grep -q "select-window" "$tmpdir/tmux-calls.log" 2>/dev/null
+  rm -rf "$tmpdir"
+}
+
+@test "handle_selection: exits cleanly when select-window fails" {
+  tmux() {
+    case "$1" in
+      switch-client) return 0 ;;
+      select-window) return 1 ;;
+      *) return 0 ;;
+    esac
+  }
+  export -f tmux
+  run handle_selection "w:mysession:1"
+  [ "$status" -eq 0 ]
 }

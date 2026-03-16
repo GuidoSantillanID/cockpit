@@ -84,15 +84,6 @@ category_for_age() {
   fi
 }
 
-# Keep old name for any external callers (unused internally now)
-category_for_timestamp() {
-  local ts=$1 today_start=$2 yesterday_start=$3
-  if (( ts >= today_start )); then echo "today"
-  elif (( ts >= yesterday_start )); then echo "yesterday"
-  else echo "older"
-  fi
-}
-
 # Emit a dimmed category header line (3 US-delimited fields, field 3 empty = non-selectable)
 emit_header() {
   local label=$1
@@ -107,7 +98,7 @@ emit_spacer() {
 
 build_list() {
   local track_session="${1:-}"
-  local now sessions_raw windows_raw
+  local now sessions_raw windows_raw panes_raw
   now=$(date +%s)
 
   # Three batched tmux calls instead of N+NM per-session/window calls
@@ -222,7 +213,6 @@ build_list() {
         done <<< "$window_panes"
         clean_name="$combined_label"
       fi
-
 
       dir_name=$(basename "$win_path")
       # Git branch — shown in blue when not main/master
@@ -356,6 +346,22 @@ parse_session() {
   esac
 }
 
+# Switch to the selected session/window; exits cleanly if the session was killed
+# between fzf display and selection.
+handle_selection() {
+  local field="$1"
+  local session_name
+  session_name=$(parse_session "$field")
+  tmux switch-client -t "$session_name" || exit 0
+
+  # If a specific window was selected, jump to it
+  if [[ "$field" == w:* ]]; then
+    local win_idx
+    win_idx=$(echo "$field" | cut -d: -f3)
+    tmux select-window -t "${session_name}:${win_idx}" || exit 0
+  fi
+}
+
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
 
 # --preview mode
@@ -407,13 +413,6 @@ field=$(printf '%s' "$selected" | cut -d$'\x1f' -f3)
 # Ignore non-data lines (headers, spacers)
 case "$field" in s:*|w:*) ;; *) exit 0 ;; esac
 
-session_name=$(parse_session "$field")
-tmux switch-client -t "$session_name"
-
-# If a specific window was selected, jump to it
-if [[ "$field" == w:* ]]; then
-  win_idx=$(echo "$field" | cut -d: -f3)
-  tmux select-window -t "${session_name}:${win_idx}"
-fi
+handle_selection "$field"
 
 fi  # end BASH_SOURCE guard

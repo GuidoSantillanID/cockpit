@@ -1,7 +1,7 @@
 # Shell functions for the Ghostty + tmux + Claude Code workflow.
 # Source this file from ~/.zshrc or ~/.bashrc:
 #
-#   source /path/to/wt/config/shell-functions.zsh
+#   source ~/shell-functions.zsh
 #
 # Also set your project search paths (used by wt new/list/doctor):
 #
@@ -17,6 +17,7 @@ function claude() {
     tmux rename-window "✳ claude"
     tmux set-option -w @is_claude_running 1
     command claude "$@"
+    # @claude_done is also set by the Stop hook in settings.json — belt and suspenders
     tmux set-option -w @claude_done 1
     tmux set-option -wu @is_claude_running
     tmux rename-window "$old_name"
@@ -31,10 +32,10 @@ alias claude-danger-zone="claude --dangerously-skip-permissions"
 alias ccd="claude --dangerously-skip-permissions"
 
 # wt — thin wrapper that enables `cd` into/out of worktrees.
-# wt new/finish/done/drop print the target path on stdout; this wrapper
+# wt new/finish/drop print the target path on stdout; this wrapper
 # captures it and calls cd. All other wt commands pass through unchanged.
 function wt() {
-  if [[ "$1" == "new" || "$1" == "finish" || "$1" == "done" || "$1" == "drop" ]]; then
+  if [[ "$1" == "new" || "$1" == "finish" || "$1" == "drop" ]]; then
     local dir
     dir=$(command wt "$@") && [[ -n "$dir" ]] && cd "$dir"
   else

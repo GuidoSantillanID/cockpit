@@ -19,6 +19,15 @@ See [SETUP.md](SETUP.md) for the full workflow walkthrough and how the pieces co
 | `claude/ccline/models.toml` | `~/.claude/ccline/models.toml` |
 | `claude/ccline/themes/guido-theme.toml` | `~/.claude/ccline/themes/guido-theme.toml` |
 | `shell-functions.zsh` | `~/shell-functions.zsh` |
+| `tmux/tmux-session-switcher` | `~/.local/bin/tmux-session-switcher` |
+| `bat/themes/Catppuccin Mocha.tmTheme` | `~/.config/bat/themes/Catppuccin Mocha.tmTheme` |
+| `shell/gitconfig` | `~/.gitconfig` |
+| `shell/zprofile` | `~/.zprofile` |
+| `shell/p10k.zsh` | `~/.p10k.zsh` |
+| `shell/zshrc-config` | extracted from `~/.zshrc` (ZSH_THEME + plugins lines) |
+| `shell/Brewfile` | manual — `brew bundle dump --file=shell/Brewfile --force` |
+| `GIT.md` | repo-only doc |
+| `SETUP.md` | repo-only doc |
 | `claude/CLAUDE.md` | `~/.claude/CLAUDE.md` |
 | `claude/skills/commit/SKILL.md` | `~/.claude/skills/commit/SKILL.md` |
 | `claude/skills/init/SKILL.md` | `~/.claude/skills/init/SKILL.md` |

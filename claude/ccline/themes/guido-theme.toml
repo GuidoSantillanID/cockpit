@@ -1,3 +1,5 @@
+# Theme definition loaded by config.toml via `theme = "guido-theme"`.
+# config.toml sets layout/style; this file defines the segment colors and options.
 theme = "guido-theme"
 
 [style]

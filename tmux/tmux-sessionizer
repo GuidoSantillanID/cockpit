@@ -1,5 +1,25 @@
 #!/usr/bin/env bash
 
+# Derives a tmux session name from a project path.
+# Worktrees get a "parent/branch" prefix; dots are replaced with underscores.
+session_name_for_path() {
+  local path="$1"
+  local parent base dir session_name
+  parent=$(basename "$(dirname "$(dirname "$path")")")
+  base=$(basename "$path")
+  dir=$(basename "$(dirname "$path")")
+
+  if [[ "$dir" == ".worktrees" ]]; then
+    session_name="${parent}/${base}"
+  else
+    session_name="$base"
+  fi
+
+  echo "$session_name" | tr . _
+}
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+
 # Top-level projects + worktrees inside each project
 projects=$(find ~/Documents/dev ~/Documents/lab -mindepth 1 -maxdepth 1 -type d)
 worktrees=$(find ~/Documents/dev ~/Documents/lab -mindepth 3 -maxdepth 3 -type d -path '*/.worktrees/*')
@@ -10,19 +30,8 @@ if [[ -z "$selected" ]]; then
   exit 0
 fi
 
-# For worktrees, prefix session name with parent project: instadeep-ui/feat-x
-parent=$(basename "$(dirname "$(dirname "$selected")")")
-base=$(basename "$selected")
-dir=$(basename "$(dirname "$selected")")
-
-if [[ "$dir" == ".worktrees" ]]; then
-  session_name="${parent}/${base}"
-else
-  session_name="$base"
-fi
-
-session_name=$(echo "$session_name" | tr . _)
-tmux_running=$(pgrep tmux)
+session_name=$(session_name_for_path "$selected")
+tmux_running=$(tmux list-sessions 2>/dev/null)
 
 if [[ -z "$TMUX" ]] && [[ -z "$tmux_running" ]]; then
   tmux new-session -s "$session_name" -c "$selected"
@@ -34,3 +43,5 @@ if ! tmux has-session -t "$session_name" 2>/dev/null; then
 fi
 
 tmux switch-client -t "$session_name"
+
+fi  # end BASH_SOURCE guard

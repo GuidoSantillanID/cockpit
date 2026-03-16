@@ -33,11 +33,11 @@ Ghostty (terminal)
 Config file: `~/.config/ghostty/config` (see `ghostty/config`)
 
 ```
-term = xterm=256color
+term = xterm-256color
 copy-on-select = true
 ```
 
-- `term = xterm=256color` — sets `$TERM` so inner apps (tmux, editors) get 256-color support
+- `term = xterm-256color` — sets `$TERM` so inner apps (tmux, editors) get 256-color support
 - `copy-on-select = true` — text selected with the mouse is automatically copied to clipboard
 
 **Ghostty + tmux color note:** The tmux config includes `set -ag terminal-overrides ",xterm-ghostty:RGB"`. This tells tmux that when Ghostty is the outer terminal, true color (24-bit RGB) is supported. Without this, 24-bit colors get downsampled to 256.
@@ -423,7 +423,7 @@ cd ~/Documents/dev/wt
 
 Copy the files from this repo to their destinations — see [README.md](README.md) for the full mapping.
 
-Edit `~/.local/bin/tmux-sessionizer` lines 8–9 to set your local project directories.
+Edit `~/.local/bin/tmux-sessionizer` — update the `projects=` and `worktrees=` variables to set your local project directories.
 
 ### 3. Install tmux dependencies manually
 
