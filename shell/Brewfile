@@ -1,5 +1,6 @@
 brew "act"
 brew "awk"
+brew "bats-core"
 brew "colima"
 brew "docker"
 brew "docker-compose"

@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+US=$'\x1f'  # Unit separator — fzf field delimiter
+
 # Catppuccin Mocha ANSI colors
 TEAL='\033[38;2;148;226;213m'
 PEACH='\033[38;2;250;179;135m'
@@ -47,12 +49,10 @@ strip_claude_prefix() {
   echo "${1#✳ }"
 }
 
-# Claude status for a single window: "running", "done", or "none"
+# Claude status from pre-fetched values: "running", "done", or "none"
+# $1 = @is_claude_running value, $2 = @claude_done value
 window_claude_status() {
-  local target=$1  # session:win_idx
-  local running done_flag
-  running=$(tmux show-options -wqv -t "$target" @is_claude_running 2>/dev/null)
-  done_flag=$(tmux show-options -wqv -t "$target" @claude_done 2>/dev/null)
+  local running=$1 done_flag=$2
   if [[ "$running" == "1" ]]; then
     echo "running"
   elif [[ -n "$done_flag" ]]; then
@@ -63,27 +63,92 @@ window_claude_status() {
 }
 
 
+# $1=timestamp $2=today_start $3=yesterday_start → "today", "yesterday", or "older"
+category_for_timestamp() {
+  local ts=$1 today_start=$2 yesterday_start=$3
+  if (( ts >= today_start )); then echo "today"
+  elif (( ts >= yesterday_start )); then echo "yesterday"
+  else echo "older"
+  fi
+}
+
+# Emit a dimmed category header line (3 US-delimited fields, field 3 empty = non-selectable)
+emit_header() {
+  local label=$1
+  printf '%b── %s ─────────────────────────────────%b%s%s%s\n' \
+    "${OVERLAY}" "$label" "${RESET}" "$US" "$US" ""
+}
+
+# Emit a blank spacer line (3 US-delimited fields, field 3 empty = non-selectable)
+emit_spacer() {
+  printf ' %s%s\n' "$US" "$US"
+}
+
 build_list() {
-  local now
+  local track_session="${1:-}"
+  local now today_start yesterday_start sessions_raw windows_raw
   now=$(date +%s)
+  today_start=$(date -v0H -v0M -v0S +%s)
+  yesterday_start=$(date -v-1d -v0H -v0M -v0S +%s)
+
+  # Two batched tmux calls instead of N+NM per-session/window calls
+  sessions_raw=$(tmux list-sessions -F '#{session_last_attached}|#{session_name}' 2>/dev/null | sort -t'|' -k1 -rn)
+  windows_raw=$(tmux list-windows -a -F '#{session_name}|#{window_index}|#{window_name}|#{pane_current_command}|#{pane_current_path}|#{window_active}|#{@is_claude_running}|#{@claude_done}' 2>/dev/null)
+
+  local output=""
+  local line_num=0
+  local start_pos=1
   local idx=0
-  while IFS='|' read -r _created name last_activity; do
+  local prev_category=""
+
+  while IFS='|' read -r last_attached name; do
+    [[ -z "$name" ]] && continue
     idx=$(( idx + 1 ))
-    local age=$(( now - last_activity ))
-    local rel
+    local age=$(( now - last_attached ))
+    local rel category
     rel=$(relative_time "$age")
+    category=$(category_for_timestamp "$last_attached" "$today_start" "$yesterday_start")
 
-    # Session row: display \t s:session_name
-    printf "%b   ${TEXT}%-22s${RESET}${OVERLAY} · %s${RESET}\t%s\n" \
-      "${MAUVE}${idx}${RESET}" "$name" "$rel" "s:${name}"
+    if [[ "$category" != "$prev_category" ]]; then
+      if [[ "$category" != "today" ]]; then
+        local header_label
+        case "$category" in
+          yesterday) header_label="Yesterday" ;;
+          older)     header_label="Older" ;;
+        esac
+        line_num=$(( line_num + 1 ))
+        output+=$(emit_header "$header_label")
+        output+=$'\n'
+      fi
+      prev_category="$category"
+    else
+      line_num=$(( line_num + 1 ))
+      output+=$(emit_spacer)
+      output+=$'\n'
+    fi
 
-    # Window rows with composite labels (1a, 1b, 2a, ...)
+    line_num=$(( line_num + 1 ))
+    [[ -n "$track_session" && "$name" == "$track_session" ]] && start_pos=$line_num
+
+    # Session row: label+name \x1f detail \x1f key
+    output+=$(printf '%b   %b%-22s%b%s%b · %s%b%s%b' \
+      "${MAUVE}${idx}${RESET}" "${TEXT}" "$name" "${RESET}" \
+      "$US" "${OVERLAY}" "$rel" "${RESET}" "$US" "s:${name}")
+    output+=$'\n'
+
+    # Window rows — matched from batched data (exact session name, no regex)
     local win_counter=0
-    while IFS='|' read -r win_idx win_name win_cmd win_path; do
+    local session_windows
+    session_windows=$(printf '%s\n' "$windows_raw" | \
+      awk -F'|' -v s="$name" '$1 == s { for(i=2;i<=NF;i++) printf "%s%s", $i, (i<NF?"|":"\n") }')
+
+    while IFS='|' read -r win_idx win_name win_cmd win_path _active w_running w_done; do
+      [[ -z "$win_idx" ]] && continue
       win_counter=$(( win_counter + 1 ))
+      line_num=$(( line_num + 1 ))
       local letter wst wicon clean_name detail dir_name
       letter=$(printf "\\x$(printf '%02x' $((96 + win_counter)))")
-      wst=$(window_claude_status "${name}:${win_idx}")
+      wst=$(window_claude_status "$w_running" "$w_done")
       wicon=$(window_icon "$wst" "$win_cmd")
       clean_name=$(strip_claude_prefix "$win_name")
       dir_name=$(basename "$win_path")
@@ -92,11 +157,19 @@ build_list() {
         done)    detail="done · $dir_name"    ;;
         *)       detail="$dir_name"           ;;
       esac
-      printf " %b %b ${TEXT}%-18s${RESET}${OVERLAY} · %s${RESET}\t%s\n" \
-        "${MAUVE}${idx}${letter}${RESET}" "$wicon" "$clean_name" "$detail" "w:${name}:${win_idx}"
-    done < <(tmux list-windows -t "$name" -F '#{window_index}|#{window_name}|#{pane_current_command}|#{pane_current_path}' 2>/dev/null)
+      # Window row: label+name \x1f detail \x1f key
+      output+=$(printf ' %b %b %b%-18s%b%s%b · %s%b%s%b' \
+        "${MAUVE}${idx}${letter}${RESET}" "$wicon" "${TEXT}" "$clean_name" "${RESET}" \
+        "$US" "${OVERLAY}" "$detail" "${RESET}" "$US" "w:${name}:${win_idx}")
+      output+=$'\n'
+    done <<< "$session_windows"
 
-  done < <(tmux list-sessions -F '#{session_created}|#{session_name}|#{session_last_attached}' 2>/dev/null | sort -t'|' -k1 -n)
+  done <<< "$sessions_raw"
+
+  if [[ -n "$track_session" ]]; then
+    printf 'POS:%d\n' "$start_pos"
+  fi
+  printf '%s' "$output"
 }
 
 preview_session() {
@@ -106,9 +179,9 @@ preview_session() {
   printf "${TEAL}%s${RESET}\n${OVERLAY}%s${RESET}\n\n" "$session" "$path"
 
   printf "${PEACH}WINDOWS${RESET}\n"
-  while IFS='|' read -r win_idx win_name win_cmd win_path; do
+  while IFS='|' read -r win_idx win_name win_cmd win_path _active w_running w_done; do
     local wst wicon clean_name detail dir_name
-    wst=$(window_claude_status "${session}:${win_idx}")
+    wst=$(window_claude_status "$w_running" "$w_done")
     wicon=$(window_icon "$wst" "$win_cmd")
     clean_name=$(strip_claude_prefix "$win_name")
     dir_name=$(basename "$win_path")
@@ -119,7 +192,7 @@ preview_session() {
     esac
     printf "${PEACH}%s:${RESET} %b ${TEXT}%s${RESET} ${OVERLAY}· %s${RESET}\n" \
       "$win_idx" "$wicon" "$clean_name" "$detail"
-  done < <(tmux list-windows -t "$session" -F '#{window_index}|#{window_name}|#{pane_current_command}|#{pane_current_path}' 2>/dev/null)
+  done < <(tmux list-windows -t "$session" -F '#{window_index}|#{window_name}|#{pane_current_command}|#{pane_current_path}|#{window_active}|#{@is_claude_running}|#{@claude_done}' 2>/dev/null)
 
   local win_count attached created now age created_rel attach_str
   win_count=$(tmux list-windows -t "$session" 2>/dev/null | wc -l | tr -d ' ')
@@ -143,29 +216,41 @@ parse_session() {
   esac
 }
 
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+
 # --preview mode
 if [[ "$1" == "--preview" ]]; then
+  [[ -z "$2" ]] && exit 0
+  case "$2" in s:*|w:*) ;; *) exit 0 ;; esac
   preview_session "$(parse_session "$2")"
   exit 0
 fi
 
 # --list mode (reload after ctrl-d)
 if [[ "$1" == "--list" ]]; then
-  build_list
+  build_list ""
   exit 0
 fi
 
 script_path="$(realpath "$0")"
+current_session=$(tmux display-message -p '#{session_name}' 2>/dev/null)
 
-selected=$(build_list | fzf \
+list_output=$(build_list "$current_session")
+start_pos=$(printf '%s' "$list_output" | head -1 | sed 's/^POS://')
+list_body=$(printf '%s' "$list_output" | tail -n +2)
+
+selected=$(printf '%s' "$list_body" | fzf \
   --ansi \
   --no-sort \
+  --cycle \
   --layout=reverse-list \
-  --delimiter=$'\t' \
-  --with-nth=1 \
-  --preview="$script_path --preview {2}" \
+  --delimiter=$'\x1f' \
+  --with-nth=1,2 \
+  --nth=1 \
+  --preview="$script_path --preview {3}" \
   --preview-window='right:45%:wrap' \
-  --bind="ctrl-d:execute-silent(tmux kill-session -t \$(echo {2} | sed 's/^[sw]://;s/:.*//'))+reload($script_path --list)" \
+  --bind="start:pos($start_pos)" \
+  --bind="ctrl-d:execute-silent(tmux kill-session -t \$(echo {3} | sed 's/^[sw]://;s/:.*//'))+reload($script_path --list)" \
   --prompt='  sessions  ❯ ' \
   --pointer='▶' \
   --header='enter: switch  ctrl-d: kill session' \
@@ -176,9 +261,12 @@ selected=$(build_list | fzf \
 
 [[ -z "$selected" ]] && exit 0
 
-field=$(printf '%s' "$selected" | cut -f2)
-session_name=$(parse_session "$field")
+field=$(printf '%s' "$selected" | cut -d$'\x1f' -f3)
 
+# Ignore non-data lines (headers, spacers)
+case "$field" in s:*|w:*) ;; *) exit 0 ;; esac
+
+session_name=$(parse_session "$field")
 tmux switch-client -t "$session_name"
 
 # If a specific window was selected, jump to it
@@ -186,3 +274,5 @@ if [[ "$field" == w:* ]]; then
   win_idx=$(echo "$field" | cut -d: -f3)
   tmux select-window -t "${session_name}:${win_idx}"
 fi
+
+fi  # end BASH_SOURCE guard
