@@ -47,6 +47,9 @@ copy_if_exists "$HOME/.gitconfig"                                     "$REPO_DIR
 copy_if_exists "$HOME/.zprofile"                                      "$REPO_DIR/shell/zprofile"
 copy_if_exists "$HOME/.p10k.zsh"                                      "$REPO_DIR/shell/p10k.zsh"
 
+# Brewfile (shell/Brewfile) is NOT auto-synced — update it manually when needed:
+#   brew bundle dump --file=shell/Brewfile --force
+
 # Extract the two meaningful config lines from .zshrc (theme + plugins)
 if [[ -f "$HOME/.zshrc" ]]; then
   grep -E '^(ZSH_THEME=|plugins=)' "$HOME/.zshrc" > "$REPO_DIR/shell/zshrc-config" 2>/dev/null \
@@ -54,12 +57,6 @@ if [[ -f "$HOME/.zshrc" ]]; then
     || echo "  skipped zshrc-config (no matches)"
 fi
 
-if command -v brew &>/dev/null; then
-  brew bundle dump --file="$REPO_DIR/shell/Brewfile" --force
-  echo "  updated $REPO_DIR/shell/Brewfile"
-else
-  echo "  skipped Brewfile (brew not found)"
-fi
 
 echo ""
 git -C "$REPO_DIR" diff --stat . || true
