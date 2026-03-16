@@ -58,6 +58,10 @@ When `.wt-meta` is present in the repo root, this is a worktree managed by the `
 - `wt list` — list active worktrees
 - `wt doctor` — check worktree health
 
+## TDD
+
+- When using TDD, always write tests first before any implementation code — no exceptions.
+
 ## TypeScript
 
 - Never add ambient type declarations (`declare module "*.png"`, etc.) that the framework already provides (e.g., Next.js via `next-env.d.ts`). Duplicate ambient declarations cause non-deterministic errors across OS filesystems (macOS vs Linux process files in different order).

@@ -223,6 +223,7 @@ build_list() {
         clean_name="$combined_label"
       fi
 
+
       dir_name=$(basename "$win_path")
       # Git branch — shown in blue when not main/master
       branch=$(git_branch_for_path "$win_path")
@@ -313,6 +314,7 @@ preview_session() {
     wicon=$(window_icon "$wst" "$win_cmd")
     clean_name=$(strip_claude_prefix "$win_name")
     dir_name=$(basename "$win_path")
+    # Column order: repo · status
     case "$wst" in
       running) detail="$dir_name · running" ;;
       done)    detail="$dir_name · done"    ;;

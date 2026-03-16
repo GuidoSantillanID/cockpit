@@ -5,6 +5,7 @@ Backup of personal Ghostty + tmux + Claude Code workflow configs. **Not the sour
 ## Workflow
 
 - To update: edit the live file → test it → `./sync.sh` → commit. Never edit files in this repo directly — `sync.sh` overwrites them.
+- **One modification rule**: only edit the source of truth (the live file on the machine). Never modify both the live file and the repo copy. `sync.sh` handles the copy — run it once after all live-file edits are done.
 - New file to track: add a `copy_if_exists` line to `sync.sh`.
 - Brewfile: not auto-synced. Update manually: `brew bundle dump --file=shell/Brewfile --force`
 
