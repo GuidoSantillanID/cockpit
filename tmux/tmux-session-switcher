@@ -314,7 +314,6 @@ preview_session() {
     wicon=$(window_icon "$wst" "$win_cmd")
     clean_name=$(strip_claude_prefix "$win_name")
     dir_name=$(basename "$win_path")
-    # Column order: repo · status
     case "$wst" in
       running) detail="$dir_name · running" ;;
       done)    detail="$dir_name · done"    ;;
