@@ -6,12 +6,20 @@ REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 copy_if_exists() {
   local src="$1"
   local dest="$2"
-  if [[ -e "$src" ]]; then
-    cp "$src" "$dest"
-    echo "  updated $dest"
-  else
+  if [[ ! -e "$src" ]]; then
     echo "  skipped $dest (not found: $src)"
+    return
   fi
+  # Skip if src is a symlink that already points into the repo (same resolved path)
+  local real_src real_dest
+  real_src=$(realpath "$src" 2>/dev/null || echo "$src")
+  real_dest=$(realpath "$dest" 2>/dev/null || echo "$dest")
+  if [[ "$real_src" == "$real_dest" ]]; then
+    echo "  skipped $dest (symlink already points to cockpit)"
+    return
+  fi
+  cp "$src" "$dest"
+  echo "  updated $dest"
 }
 
 echo "Updating config backups from local machine..."
@@ -25,7 +33,32 @@ copy_if_exists "$HOME/.claude/settings.json"                        "$REPO_DIR/c
 copy_if_exists "$HOME/.claude/ccline/config.toml"                   "$REPO_DIR/claude/ccline/config.toml"
 copy_if_exists "$HOME/.claude/ccline/models.toml"                   "$REPO_DIR/claude/ccline/models.toml"
 copy_if_exists "$HOME/.claude/ccline/themes/guido-theme.toml"       "$REPO_DIR/claude/ccline/themes/guido-theme.toml"
-copy_if_exists "$HOME/shell-functions.zsh"                          "$REPO_DIR/shell-functions.zsh"
+copy_if_exists "$HOME/shell-functions.zsh"                           "$REPO_DIR/shell-functions.zsh"
+copy_if_exists "$HOME/.local/bin/tmux-session-switcher"              "$REPO_DIR/tmux/tmux-session-switcher"
+copy_if_exists "$HOME/.claude/CLAUDE.md"                             "$REPO_DIR/claude/CLAUDE.md"
+copy_if_exists "$HOME/.claude/skills/commit/SKILL.md"               "$REPO_DIR/claude/skills/commit/SKILL.md"
+copy_if_exists "$HOME/.claude/skills/p/SKILL.md"                    "$REPO_DIR/claude/skills/p/SKILL.md"
+copy_if_exists "$HOME/.claude/skills/review-pr/SKILL.md"            "$REPO_DIR/claude/skills/review-pr/SKILL.md"
+copy_if_exists "$HOME/.claude/skills/test-pr/SKILL.md"              "$REPO_DIR/claude/skills/test-pr/SKILL.md"
+copy_if_exists "$HOME/.claude/skills/update-docs/SKILL.md"          "$REPO_DIR/claude/skills/update-docs/SKILL.md"
+copy_if_exists "$HOME/.claude/skills/update-pr-description/SKILL.md" "$REPO_DIR/claude/skills/update-pr-description/SKILL.md"
+copy_if_exists "$HOME/.gitconfig"                                     "$REPO_DIR/shell/gitconfig"
+copy_if_exists "$HOME/.zprofile"                                      "$REPO_DIR/shell/zprofile"
+copy_if_exists "$HOME/.p10k.zsh"                                      "$REPO_DIR/shell/p10k.zsh"
+
+# Extract the two meaningful config lines from .zshrc (theme + plugins)
+if [[ -f "$HOME/.zshrc" ]]; then
+  grep -E '^(ZSH_THEME=|plugins=)' "$HOME/.zshrc" > "$REPO_DIR/shell/zshrc-config" 2>/dev/null \
+    && echo "  updated $REPO_DIR/shell/zshrc-config" \
+    || echo "  skipped zshrc-config (no matches)"
+fi
+
+if command -v brew &>/dev/null; then
+  brew bundle dump --file="$REPO_DIR/shell/Brewfile" --force
+  echo "  updated $REPO_DIR/shell/Brewfile"
+else
+  echo "  skipped Brewfile (brew not found)"
+fi
 
 echo ""
 git -C "$REPO_DIR" diff --stat . || true

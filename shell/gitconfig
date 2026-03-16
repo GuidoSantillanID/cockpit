@@ -1,0 +1,28 @@
+[user]
+	name = Guido Santillan
+	email = g.santillan@instadeep.com
+[core]
+	editor = nano
+	autocrlf = input
+[alias]
+	pushpr = "!f() { git push origin HEAD:\"$1\"; }; f"
+	gl = log --pretty=format:'%Cgreen%<(14)%ar%Creset %C(dim)•%Creset%C(auto)%d%Creset %C(bold)%s%Creset'
+	glh = log --pretty=format:'%Cgreen%<(14)%ar%Creset %C(dim)•%Creset %C(dim yellow)%h%Creset%C(auto)%d%Creset %C(bold)%s%Creset'
+[log]
+	excludeDecoration = refs/remotes/origin/HEAD
+[push]
+	autoSetupRemote = true
+[rerere]
+	enabled = true
+[rebase]
+	autoStash = true
+[fetch]
+	prune = true
+[diff]
+	algorithm = histogram
+[merge]
+	conflictstyle = zdiff3
+[branch]
+	sort = -committerdate
+[help]
+	autocorrect = prompt

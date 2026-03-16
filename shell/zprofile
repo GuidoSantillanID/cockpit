@@ -1,0 +1,16 @@
+eval "$(/opt/homebrew/bin/brew shellenv)"
+# Add Visual Studio Code (code)
+export PATH="$PATH:/Applications/Visual Studio Code.app/Contents/Resources/app/bin"
+
+##
+# Your previous /Users/guido/.zprofile file was backed up as /Users/guido/.zprofile.macports-saved_2024-11-15_at_13:33:15
+##
+
+# MacPorts Installer addition on 2024-11-15_at_13:33:15: adding an appropriate PATH variable for use with MacPorts.
+export PATH="/opt/local/bin:/opt/local/sbin:$PATH"
+# Finished adapting your PATH environment variable for use with MacPorts.
+
+
+
+# Added by Toolbox App
+export PATH="$PATH:/Users/guido/Library/Application Support/JetBrains/Toolbox/scripts"

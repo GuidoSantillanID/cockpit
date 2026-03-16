@@ -213,17 +213,27 @@ The `@claude_done` user option is set externally (by a Claude Code hook in `sett
 
 ---
 
-### Choose-tree
+### Session Switcher
 
 ```
-bind s choose-tree -Zs ...
-bind w choose-tree -Zw ...
+bind s choose-tree -Zs
+bind w display-popup -w 85% -h 80% -E "tmux-session-switcher"
 ```
 
-Custom session/window picker. The format string renders three types of rows differently:
-- **Session rows:** teal, with window count and `(attached)` indicator
-- **Window rows:** peach window name. For Claude windows, shows the live pane title (e.g. `* Claude Code`) instead of the static window name — the `*` prefix is Claude Code's own activity indicator. For non-Claude windows, shows the window name. Green `●` shown if `@claude_done` is set.
-- **Pane rows:** muted gray, shows current command and pane title
+- **`Ctrl+a s`** — native tmux `choose-tree`, sessions only. Quick fallback picker.
+- **`Ctrl+a w`** — fzf popup running `~/.local/bin/tmux-session-switcher` (symlink → `cockpit/tmux/tmux-session-switcher`). Shows all sessions and their windows in a single list.
+
+**List format:** composite labels (`1`, `1a`, `1b`…) — the number is the session index, the letter is the window within that session. Icons per window type:
+- Peach robot (`󰚩`) — Claude running in that window
+- Green robot (`󰚩`) — Claude finished (`@claude_done` set)
+- Terminal icon — plain shell window
+- Gear icon — any other command
+
+**Controls:**
+- `Enter` — switch to selected session (or specific window if a window row is selected)
+- `ctrl-d` — kill the selected session (then reloads the list)
+
+**Preview pane** (right side): shows session name, path, window list with icons and details, plus attached/detached status, window count, and session age.
 
 ---
 
@@ -258,8 +268,8 @@ These three style options use hardcoded hex (catppuccin mocha values) because st
 | `Ctrl+a v` | Vertical split (opens in current path) |
 | `Ctrl+a h` | Horizontal split (opens in current path) |
 | `Ctrl+a f` | Sessionizer — fuzzy search + open/switch project session |
-| `Ctrl+a s` | List and switch between existing sessions |
-| `Ctrl+a w` | List and switch between windows across all sessions |
+| `Ctrl+a s` | choose-tree (native tmux, sessions only) |
+| `Ctrl+a w` | Session switcher (fzf popup — sessions + windows) |
 | `Ctrl+a c` | New window (opens in current directory) |
 | `Ctrl+a ,` | Rename window |
 | `Ctrl+a 1-9` | Switch to window N (windows start at 1) |

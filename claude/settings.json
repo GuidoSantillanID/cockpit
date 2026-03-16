@@ -59,7 +59,7 @@
       "Spinning up some magic"
     ]
   },
+  "effortLevel": "high",
   "autoMemoryEnabled": false,
-  "skipDangerousModePermissionPrompt": true,
-  "effortLevel": "high"
+  "skipDangerousModePermissionPrompt": true
 }

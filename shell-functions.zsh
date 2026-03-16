@@ -17,6 +17,7 @@ function claude() {
     tmux rename-window "✳ claude"
     tmux set-option -w @is_claude_running 1
     command claude "$@"
+    tmux set-option -w @claude_done 1
     tmux set-option -wu @is_claude_running
     tmux rename-window "$old_name"
   else
@@ -27,6 +28,7 @@ function claude() {
 # claude-danger-zone — runs Claude Code with all permission prompts skipped.
 # Use when you trust the task and want uninterrupted autonomous operation.
 alias claude-danger-zone="claude --dangerously-skip-permissions"
+alias ccd="claude --dangerously-skip-permissions"
 
 # wt — thin wrapper that enables `cd` into/out of worktrees.
 # wt new/finish/done/drop print the target path on stdout; this wrapper
