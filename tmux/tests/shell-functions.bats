@@ -27,6 +27,23 @@ teardown() {
   rm -rf "$MOCK_DIR"
 }
 
+# ── static file checks ────────────────────────────────────────────────────────
+
+@test "source comment: uses home-relative path not stale wt config path" {
+  run grep '/path/to' "$SCRIPT"
+  [ "$status" -ne 0 ]
+}
+
+@test "wt comment: does not list 'done' as a cd subcommand" {
+  run grep 'new/finish/done' "$SCRIPT"
+  [ "$status" -ne 0 ]
+}
+
+@test "@claude_done: belt-and-suspenders comment documents redundancy with settings.json" {
+  run grep 'belt and suspenders' "$SCRIPT"
+  [ "$status" -eq 0 ]
+}
+
 # ── claude() wrapper — tmux integration ───────────────────────────────────────
 
 setup_tmux_mock() {
