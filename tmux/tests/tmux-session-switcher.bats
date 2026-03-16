@@ -638,7 +638,7 @@ setup_tmux_mock() {
   tmux() {
     case "$*" in
       *"#{session_path}"*)     echo "$tmpdir" ;;
-      "list-panes -t"*)
+      "list-panes -s -t"*)
         printf '0|0|dev|claude|%s|1|1|\n' "$tmpdir"
         printf '0|1|dev|zsh|%s|0||\n' "$tmpdir"
         ;;
@@ -661,8 +661,9 @@ setup_tmux_mock() {
       [[ -n "$line" ]] && window_section_lines=$(( window_section_lines + 1 ))
     fi
   done
-  # 2 panes in 1 window: 1 window header + 2 pane sub-rows = 3 lines
-  [ "$window_section_lines" -ge 3 ]
+  # 2 panes in 1 window: header (active/claude) + 1 sub-row (zsh differs) = 2 lines
+  # identical-to-header panes are suppressed
+  [ "$window_section_lines" -ge 2 ]
 }
 
 # ── preview_session: git icon glyph (#2 bug) ─────────────────────────────────
