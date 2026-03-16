@@ -9,10 +9,24 @@ OVERLAY='\033[38;2;108;112;134m'
 TEXT='\033[38;2;205;214;244m'
 RESET='\033[0m'
 
-# Colored dot indicators: blue=running, green=done, gray=none
-DOT_RUNNING="${BLUE}●${RESET}"
-DOT_DONE="${GREEN}●${RESET}"
-DOT_NONE="${OVERLAY}·${RESET}"
+# Nerd Font icons by window type
+ICON_CLAUDE="${PEACH}${RESET}"   # nf-md-creation (sparkle) — claude running
+ICON_SHELL="${OVERLAY}${RESET}"  # nf-dev-terminal — shell window
+ICON_OTHER="${OVERLAY}${RESET}"  # nf-cod-gear — anything else
+
+window_icon() {
+  local claude_status=$1 cmd=$2
+  case "$claude_status" in
+    running) printf '%b' "$ICON_CLAUDE" ;;
+    done)    printf '%b' "${GREEN}●${RESET}" ;;
+    *)
+      case "$cmd" in
+        zsh|bash|fish) printf '%b' "$ICON_SHELL" ;;
+        *)             printf '%b' "$ICON_OTHER" ;;
+      esac
+      ;;
+  esac
+}
 
 relative_time() {
   local seconds=$1
@@ -47,31 +61,6 @@ window_claude_status() {
   fi
 }
 
-# Aggregate Claude status across all windows in a session
-session_claude_status() {
-  local session=$1
-  local is_running=0
-  local is_done=0
-  while IFS= read -r win_id; do
-    local st
-    st=$(window_claude_status "${session}:${win_id}")
-    [[ "$st" == "running" ]] && is_running=1
-    [[ "$st" == "done"    ]] && is_done=1
-  done < <(tmux list-windows -t "$session" -F '#{window_index}' 2>/dev/null)
-
-  if (( is_running )); then echo "running"
-  elif (( is_done ));   then echo "done"
-  else                       echo "none"
-  fi
-}
-
-status_dot() {
-  case "$1" in
-    running) printf '%b' "$DOT_RUNNING" ;;
-    done)    printf '%b' "$DOT_DONE"    ;;
-    *)       printf '%b' "$DOT_NONE"    ;;
-  esac
-}
 
 build_list() {
   local now
@@ -84,17 +73,17 @@ build_list() {
     rel=$(relative_time "$age")
 
     # Session row: display \t s:session_name
-    printf "%b %b ${TEXT}%-22s${RESET}${OVERLAY} · %s${RESET}\t%s\n" \
-      "${PEACH}${idx}${RESET}" "$DOT_NONE" "$name" "$rel" "s:${name}"
+    printf "%b   ${TEXT}%-22s${RESET}${OVERLAY} · %s${RESET}\t%s\n" \
+      "${PEACH}${idx}${RESET}" "$name" "$rel" "s:${name}"
 
     # Window rows with composite labels (1a, 1b, 2a, ...)
     local win_counter=0
     while IFS='|' read -r win_idx win_name win_cmd win_path; do
       win_counter=$(( win_counter + 1 ))
-      local letter wst wdot clean_name detail dir_name
+      local letter wst wicon clean_name detail dir_name
       letter=$(printf "\\x$(printf '%02x' $((96 + win_counter)))")
       wst=$(window_claude_status "${name}:${win_idx}")
-      wdot=$(status_dot "$wst")
+      wicon=$(window_icon "$wst" "$win_cmd")
       clean_name=$(strip_claude_prefix "$win_name")
       dir_name=$(basename "$win_path")
       case "$wst" in
@@ -103,7 +92,7 @@ build_list() {
         *)       detail="$dir_name"           ;;
       esac
       printf " %b %b ${TEXT}%-18s${RESET}${OVERLAY} · %s${RESET}\t%s\n" \
-        "${PEACH}${idx}${letter}${RESET}" "$wdot" "$clean_name" "$detail" "w:${name}:${win_idx}"
+        "${PEACH}${idx}${letter}${RESET}" "$wicon" "$clean_name" "$detail" "w:${name}:${win_idx}"
     done < <(tmux list-windows -t "$name" -F '#{window_index}|#{window_name}|#{pane_current_command}|#{pane_current_path}' 2>/dev/null)
 
   done < <(tmux list-sessions -F '#{session_created}|#{session_name}|#{session_last_attached}' 2>/dev/null | sort -t'|' -k1 -n)
@@ -117,9 +106,9 @@ preview_session() {
 
   printf "${PEACH}WINDOWS${RESET}\n"
   while IFS='|' read -r win_idx win_name win_cmd win_path; do
-    local wst wdot clean_name detail dir_name
+    local wst wicon clean_name detail dir_name
     wst=$(window_claude_status "${session}:${win_idx}")
-    wdot=$(status_dot "$wst")
+    wicon=$(window_icon "$wst" "$win_cmd")
     clean_name=$(strip_claude_prefix "$win_name")
     dir_name=$(basename "$win_path")
     case "$wst" in
@@ -128,7 +117,7 @@ preview_session() {
       *)       detail="$dir_name"           ;;
     esac
     printf "${PEACH}%s:${RESET} %b ${TEXT}%s${RESET} ${OVERLAY}· %s${RESET}\n" \
-      "$win_idx" "$wdot" "$clean_name" "$detail"
+      "$win_idx" "$wicon" "$clean_name" "$detail"
   done < <(tmux list-windows -t "$session" -F '#{window_index}|#{window_name}|#{pane_current_command}|#{pane_current_path}' 2>/dev/null)
 
   local win_count attached created now age created_rel attach_str
