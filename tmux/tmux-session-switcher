@@ -5,6 +5,7 @@ TEAL='\033[38;2;148;226;213m'
 PEACH='\033[38;2;250;179;135m'
 GREEN='\033[38;2;166;227;161m'
 BLUE='\033[38;2;137;180;250m'    # Catppuccin blue #89b4fa
+MAUVE='\033[38;2;203;166;247m'   # Catppuccin mauve #cba6f7
 OVERLAY='\033[38;2;108;112;134m'
 TEXT='\033[38;2;205;214;244m'
 RESET='\033[0m'
@@ -18,7 +19,7 @@ window_icon() {
   local claude_status=$1 cmd=$2
   case "$claude_status" in
     running) printf '%b' "$ICON_CLAUDE" ;;
-    done)    printf '%b' "${GREEN}●${RESET}" ;;
+    done)    printf '%b' "${GREEN}󰚩${RESET}" ;;
     *)
       case "$cmd" in
         zsh|bash|fish) printf '%b' "$ICON_SHELL" ;;
@@ -74,7 +75,7 @@ build_list() {
 
     # Session row: display \t s:session_name
     printf "%b   ${TEXT}%-22s${RESET}${OVERLAY} · %s${RESET}\t%s\n" \
-      "${PEACH}${idx}${RESET}" "$name" "$rel" "s:${name}"
+      "${MAUVE}${idx}${RESET}" "$name" "$rel" "s:${name}"
 
     # Window rows with composite labels (1a, 1b, 2a, ...)
     local win_counter=0
@@ -92,7 +93,7 @@ build_list() {
         *)       detail="$dir_name"           ;;
       esac
       printf " %b %b ${TEXT}%-18s${RESET}${OVERLAY} · %s${RESET}\t%s\n" \
-        "${PEACH}${idx}${letter}${RESET}" "$wicon" "$clean_name" "$detail" "w:${name}:${win_idx}"
+        "${MAUVE}${idx}${letter}${RESET}" "$wicon" "$clean_name" "$detail" "w:${name}:${win_idx}"
     done < <(tmux list-windows -t "$name" -F '#{window_index}|#{window_name}|#{pane_current_command}|#{pane_current_path}' 2>/dev/null)
 
   done < <(tmux list-sessions -F '#{session_created}|#{session_name}|#{session_last_attached}' 2>/dev/null | sort -t'|' -k1 -n)
