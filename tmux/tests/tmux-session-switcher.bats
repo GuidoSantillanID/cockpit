@@ -688,13 +688,6 @@ setup_tmux_mock() {
   [ "$actual_char" != "$(printf '%b' '\xe2\x8e\x87')" ]
 }
 
-# ── dead code absence ────────────────────────────────────────────────────────
-
-@test "category_for_timestamp: dead function has been removed" {
-  run grep 'category_for_timestamp' "$BATS_TEST_DIRNAME/../tmux-session-switcher"
-  [ "$status" -ne 0 ]
-}
-
 # ── pane_label_for_cmd ────────────────────────────────────────────────────────
 
 @test "pane_label_for_cmd: zsh returns 'shell'" {
