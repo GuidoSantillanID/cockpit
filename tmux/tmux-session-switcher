@@ -10,9 +10,9 @@ TEXT='\033[38;2;205;214;244m'
 RESET='\033[0m'
 
 # Nerd Font icons by window type
-ICON_CLAUDE="${PEACH}${RESET}"   # nf-md-creation (sparkle) — claude running
-ICON_SHELL="${OVERLAY}${RESET}"  # nf-dev-terminal — shell window
-ICON_OTHER="${OVERLAY}${RESET}"  # nf-cod-gear — anything else
+ICON_CLAUDE="${PEACH}󰚩${RESET}"   # nf-md-creation (sparkle) — claude running
+ICON_SHELL="${OVERLAY}${RESET}"  # nf-dev-terminal — shell window
+ICON_OTHER="${OVERLAY}${RESET}"  # nf-cod-gear — anything else
 
 window_icon() {
   local claude_status=$1 cmd=$2
