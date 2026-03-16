@@ -59,34 +59,28 @@ setup() {
   [ "$output" = "none" ]
 }
 
-# ── category_for_timestamp ────────────────────────────────────────────────────
-# Signature: category_for_timestamp <timestamp> <today_start> <yesterday_start>
+# ── category_for_age ──────────────────────────────────────────────────────────
+# Signature: category_for_age <age_seconds> → "active" or "inactive"
+# Active: accessed within 3 days (259200 seconds); inactive: older
 
-@test "category_for_timestamp: today" {
-  local now today_start yesterday_start
-  now=$(date +%s)
-  today_start=$(date -v0H -v0M -v0S +%s)
-  yesterday_start=$(date -v-1d -v0H -v0M -v0S +%s)
-  run category_for_timestamp "$now" "$today_start" "$yesterday_start"
-  [ "$output" = "today" ]
+@test "category_for_age: active when within 3 days" {
+  run category_for_age 3600      # 1h ago
+  [ "$output" = "active" ]
 }
 
-@test "category_for_timestamp: yesterday" {
-  local today_start yesterday_start ts
-  today_start=$(date -v0H -v0M -v0S +%s)
-  yesterday_start=$(date -v-1d -v0H -v0M -v0S +%s)
-  ts=$(( yesterday_start + 3600 ))  # 1h after start of yesterday
-  run category_for_timestamp "$ts" "$today_start" "$yesterday_start"
-  [ "$output" = "yesterday" ]
+@test "category_for_age: active at exactly 3 days boundary" {
+  run category_for_age 259200    # exactly 3 days
+  [ "$output" = "active" ]
 }
 
-@test "category_for_timestamp: older" {
-  local today_start yesterday_start ts
-  today_start=$(date -v0H -v0M -v0S +%s)
-  yesterday_start=$(date -v-1d -v0H -v0M -v0S +%s)
-  ts=$(( yesterday_start - 86400 ))  # 2 days ago
-  run category_for_timestamp "$ts" "$today_start" "$yesterday_start"
-  [ "$output" = "older" ]
+@test "category_for_age: inactive when older than 3 days" {
+  run category_for_age 259201    # 3 days + 1 second
+  [ "$output" = "inactive" ]
+}
+
+@test "category_for_age: inactive when 4 days old" {
+  run category_for_age 345600    # 4 days
+  [ "$output" = "inactive" ]
 }
 
 # ── emit_header ───────────────────────────────────────────────────────────────
@@ -120,26 +114,30 @@ setup() {
 # ── build_list ────────────────────────────────────────────────────────────────
 
 # Mock tmux to return canned data:
-#   session A: last_attached = today (recent)
-#   session B: last_attached = 2 days ago (older)
-# Both sessions have one window each.
+#   _default: last_attached = 4 days ago (inactive timestamp, but always pinned first)
+#   sessionA: last_attached = 1h ago (active)
+#   sessionB: last_attached = 4 days ago (inactive)
+#   zebra:    last_attached = 2h ago (active, sorts after sessionA alphabetically)
+# All sessions have one window each.
 setup_tmux_mock() {
-  local now today_start
+  local now
   now=$(date +%s)
-  today_start=$(date -v0H -v0M -v0S +%s)
-  # Use globals (not local) + export so they survive into run's subshell
-  MOCK_TS_TODAY=$(( today_start + 3600 ))    # today, 1h after midnight
-  MOCK_TS_OLDER=$(( today_start - 86400 * 2 ))  # 2 days ago
-  export MOCK_TS_TODAY MOCK_TS_OLDER
+  MOCK_TS_ACTIVE_1=$(( now - 3600 ))        # 1h ago — active
+  MOCK_TS_ACTIVE_2=$(( now - 7200 ))        # 2h ago — active
+  MOCK_TS_INACTIVE=$(( now - 86400 * 4 ))   # 4 days ago — inactive
+  export MOCK_TS_ACTIVE_1 MOCK_TS_ACTIVE_2 MOCK_TS_INACTIVE
 
   tmux() {
     case "$1 $2" in
       "list-sessions -F")
-        printf '%s|sessionA\n%s|sessionB\n' "$MOCK_TS_TODAY" "$MOCK_TS_OLDER"
+        printf '%s|sessionA\n%s|sessionB\n%s|zebra\n%s|_default\n' \
+          "$MOCK_TS_ACTIVE_1" "$MOCK_TS_INACTIVE" "$MOCK_TS_ACTIVE_2" "$MOCK_TS_INACTIVE"
         ;;
       "list-windows -a")
         printf 'sessionA|0|dev|zsh|/home/user/projectA|1||\n'
         printf 'sessionB|0|dev|zsh|/home/user/projectB|1||\n'
+        printf 'zebra|0|dev|zsh|/home/user/projectZ|1||\n'
+        printf '_default|0|dev|zsh|/home/user/default|1||\n'
         ;;
     esac
   }
@@ -161,29 +159,61 @@ setup_tmux_mock() {
   done <<< "$data_lines"
 }
 
-@test "build_list: sessions sorted most-recent first" {
+@test "build_list: _default session always appears first" {
   setup_tmux_mock
   local US=$'\x1f'
   run build_list ""
-  # sessionA (today) should appear before sessionB (older) in output
-  local pos_a pos_b i=0
+  # _default must be the very first session row (field 3 = s:_default)
+  local first_session_key=""
+  for line in "${lines[@]}"; do
+    local key
+    key=$(printf '%s' "$line" | cut -d"$US" -f3)
+    [[ "$key" == s:* ]] && { first_session_key="$key"; break; }
+  done
+  [ "$first_session_key" = "s:_default" ]
+}
+
+@test "build_list: active sessions sorted alphabetically after _default" {
+  setup_tmux_mock
+  local US=$'\x1f'
+  run build_list ""
+  # sessionA and zebra are both active; sessionA should come before zebra
+  local pos_a pos_z i=0
   for line in "${lines[@]}"; do
     i=$(( i + 1 ))
     local key
     key=$(printf '%s' "$line" | cut -d"$US" -f3)
     [[ "$key" == "s:sessionA" ]] && pos_a=$i
-    [[ "$key" == "s:sessionB" ]] && pos_b=$i
+    [[ "$key" == "s:zebra" ]]    && pos_z=$i
   done
   [ -n "$pos_a" ]
-  [ -n "$pos_b" ]
-  [ "$pos_a" -lt "$pos_b" ]
+  [ -n "$pos_z" ]
+  [ "$pos_a" -lt "$pos_z" ]
 }
 
-@test "build_list: category header before older session" {
+@test "build_list: inactive sessions appear after all active sessions" {
   setup_tmux_mock
   local US=$'\x1f'
   run build_list ""
-  # Find line before sessionB — should be an Older header (empty field 3)
+  # sessionB is inactive; zebra is active — zebra must come before sessionB
+  local pos_b pos_z i=0
+  for line in "${lines[@]}"; do
+    i=$(( i + 1 ))
+    local key
+    key=$(printf '%s' "$line" | cut -d"$US" -f3)
+    [[ "$key" == "s:sessionB" ]] && pos_b=$i
+    [[ "$key" == "s:zebra" ]]    && pos_z=$i
+  done
+  [ -n "$pos_b" ]
+  [ -n "$pos_z" ]
+  [ "$pos_z" -lt "$pos_b" ]
+}
+
+@test "build_list: Inactive header appears before inactive sessions" {
+  setup_tmux_mock
+  local US=$'\x1f'
+  run build_list ""
+  # Find the line immediately before sessionB — its field 3 must be empty (header)
   local found_header=0
   local prev_key=""
   for line in "${lines[@]}"; do
@@ -197,18 +227,18 @@ setup_tmux_mock() {
   [ "$found_header" -eq 1 ]
 }
 
-@test "build_list: no category header for today sessions" {
+@test "build_list: no header before active sessions" {
   setup_tmux_mock
   local US=$'\x1f'
   run build_list ""
-  # First non-empty line with content should be sessionA (no header before it)
+  # _default is first; the first key in the output must be a session/window key, not empty
   local first_key=""
   for line in "${lines[@]}"; do
     [[ -z "$line" ]] && continue
     first_key=$(printf '%s' "$line" | cut -d"$US" -f3)
     break
   done
-  [ "$first_key" = "s:sessionA" ]
+  [[ "$first_key" == s:* || "$first_key" == w:* ]]
 }
 
 @test "build_list: header/spacer lines have empty field 3" {
@@ -259,4 +289,211 @@ setup_tmux_mock() {
   local data_lines
   data_lines=$(printf '%s\n' "${lines[@]}" | grep -v '^POS:' | grep -v '^$' || true)
   [ -z "$data_lines" ]
+}
+
+# ── padding before Inactive header (#1) ──────────────────────────────────────
+
+@test "build_list: spacer line emitted before Inactive header" {
+  setup_tmux_mock
+  local US=$'\x1f'
+  run build_list ""
+  # The line immediately before the Inactive header (empty field 3 with "Inactive" in field 1)
+  # must itself be an empty-field-3 line (spacer), not a session row
+  local prev_key="" found=0
+  for line in "${lines[@]}"; do
+    local key f1
+    f1=$(printf '%s' "$line" | cut -d"$US" -f1)
+    key=$(printf '%s' "$line" | cut -d"$US" -f3)
+    if [[ "$f1" == *"Inactive"* ]]; then
+      [[ "$prev_key" == "" ]] && found=1
+      break
+    fi
+    prev_key="$key"
+  done
+  [ "$found" -eq 1 ]
+}
+
+# ── column order: repo first, status last (#5) ───────────────────────────────
+
+@test "build_list: running window shows dirname before 'running'" {
+  local now
+  now=$(date +%s)
+  tmux() {
+    case "$1 $2" in
+      "list-sessions -F")
+        printf '%s|myproject\n' "$(( now - 60 ))"
+        ;;
+      "list-windows -a")
+        printf 'myproject|0|dev|zsh|/home/user/myproject|1|1|\n'
+        ;;
+    esac
+  }
+  export -f tmux
+  local US=$'\x1f'
+  run build_list ""
+  # Find the window row (field 3 = w:myproject:0) and check field 2
+  local detail=""
+  for line in "${lines[@]}"; do
+    local key
+    key=$(printf '%s' "$line" | cut -d"$US" -f3)
+    if [[ "$key" == "w:myproject:0" ]]; then
+      detail=$(printf '%s' "$line" | cut -d"$US" -f2)
+      break
+    fi
+  done
+  # detail should be "· myproject · running", NOT "· running · myproject"
+  [[ "$detail" == *"myproject"*"running"* ]]
+  [[ "$detail" != *"running"*"myproject"* ]] || {
+    # Extra check: "running" must come AFTER "myproject" in the string
+    local pos_repo pos_run
+    pos_repo=$(printf '%s' "$detail" | awk '{print index($0,"myproject")}')
+    pos_run=$(printf '%s' "$detail" | awk '{print index($0,"running")}')
+    [ "$pos_repo" -lt "$pos_run" ]
+  }
+}
+
+# ── window name dedup (#7) ───────────────────────────────────────────────────
+
+@test "build_list: window named same as session shown as 'shell' when idle" {
+  local now
+  now=$(date +%s)
+  tmux() {
+    case "$1 $2" in
+      "list-sessions -F")
+        printf '%s|wt\n' "$(( now - 60 ))"
+        ;;
+      "list-windows -a")
+        # window_name=wt (same as session), cmd=zsh (idle shell), no claude running
+        printf 'wt|0|wt|zsh|/home/user/wt|1||\n'
+        ;;
+    esac
+  }
+  export -f tmux
+  local US=$'\x1f'
+  run build_list ""
+  # Find the window row and check field 1 contains "shell", not "wt"
+  local field1=""
+  for line in "${lines[@]}"; do
+    local key
+    key=$(printf '%s' "$line" | cut -d"$US" -f3)
+    if [[ "$key" == "w:wt:0" ]]; then
+      field1=$(printf '%s' "$line" | cut -d"$US" -f1)
+      break
+    fi
+  done
+  [[ "$field1" == *"shell"* ]]
+}
+
+@test "build_list: window named differently from session keeps its name" {
+  local now
+  now=$(date +%s)
+  tmux() {
+    case "$1 $2" in
+      "list-sessions -F")
+        printf '%s|myapp\n' "$(( now - 60 ))"
+        ;;
+      "list-windows -a")
+        printf 'myapp|0|terminal|zsh|/home/user/other-dir|1||\n'
+        ;;
+    esac
+  }
+  export -f tmux
+  local US=$'\x1f'
+  run build_list ""
+  local field1=""
+  for line in "${lines[@]}"; do
+    local key
+    key=$(printf '%s' "$line" | cut -d"$US" -f3)
+    if [[ "$key" == "w:myapp:0" ]]; then
+      field1=$(printf '%s' "$line" | cut -d"$US" -f1)
+      break
+    fi
+  done
+  [[ "$field1" == *"terminal"* ]]
+  [[ "$field1" != *"shell"* ]]
+}
+
+# ── git_branch_for_path (#6) ─────────────────────────────────────────────────
+
+@test "git_branch_for_path: returns branch name for git repo" {
+  # Use the current repo (cockpit) which is on a known branch
+  local branch
+  branch=$(git_branch_for_path "$BATS_TEST_DIRNAME/../..")
+  [ -n "$branch" ]
+}
+
+@test "git_branch_for_path: returns empty for non-git directory" {
+  local branch
+  branch=$(git_branch_for_path "/tmp")
+  [ -z "$branch" ]
+}
+
+@test "build_list: non-main branch shown in window detail" {
+  local now
+  now=$(date +%s)
+  # Create a temp dir and fake git repo on a feature branch
+  local tmpdir
+  tmpdir=$(mktemp -d)
+  git init -q "$tmpdir"
+  git -C "$tmpdir" checkout -q -b feat/my-feature 2>/dev/null || \
+    git -C "$tmpdir" symbolic-ref HEAD refs/heads/feat/my-feature
+  tmux() {
+    case "$1 $2" in
+      "list-sessions -F")
+        printf '%s|myproject\n' "$(( now - 60 ))"
+        ;;
+      "list-windows -a")
+        printf 'myproject|0|terminal|zsh|%s|1||\n' "$tmpdir"
+        ;;
+    esac
+  }
+  export -f tmux
+  local US=$'\x1f'
+  run build_list ""
+  rm -rf "$tmpdir"
+  # Window detail should contain "feat/my-feature"
+  local detail=""
+  for line in "${lines[@]}"; do
+    local key
+    key=$(printf '%s' "$line" | cut -d"$US" -f3)
+    if [[ "$key" == w:myproject:* ]]; then
+      detail=$(printf '%s' "$line" | cut -d"$US" -f2)
+      break
+    fi
+  done
+  [[ "$detail" == *"feat/my-feature"* ]]
+}
+
+@test "build_list: main branch not shown in window detail" {
+  local now
+  now=$(date +%s)
+  local tmpdir
+  tmpdir=$(mktemp -d)
+  git init -q "$tmpdir"
+  git -C "$tmpdir" checkout -q -b main 2>/dev/null || \
+    git -C "$tmpdir" symbolic-ref HEAD refs/heads/main
+  tmux() {
+    case "$1 $2" in
+      "list-sessions -F")
+        printf '%s|myproject\n' "$(( now - 60 ))"
+        ;;
+      "list-windows -a")
+        printf 'myproject|0|terminal|zsh|%s|1||\n' "$tmpdir"
+        ;;
+    esac
+  }
+  export -f tmux
+  local US=$'\x1f'
+  run build_list ""
+  rm -rf "$tmpdir"
+  local detail=""
+  for line in "${lines[@]}"; do
+    local key
+    key=$(printf '%s' "$line" | cut -d"$US" -f3)
+    if [[ "$key" == w:myproject:* ]]; then
+      detail=$(printf '%s' "$line" | cut -d"$US" -f2)
+      break
+    fi
+  done
+  [[ "$detail" != *" main"* ]]
 }

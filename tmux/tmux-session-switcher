@@ -17,6 +17,10 @@ ICON_CLAUDE="${PEACH}󰚩${RESET}"   # nf-md-creation (sparkle) — claude runni
 ICON_SHELL="${OVERLAY}${RESET}"  # nf-dev-terminal — shell window
 ICON_OTHER="${OVERLAY}${RESET}"  # nf-cod-gear — anything else
 
+git_branch_for_path() {
+  git -C "$1" branch --show-current 2>/dev/null || true
+}
+
 window_icon() {
   local claude_status=$1 cmd=$2
   case "$claude_status" in
@@ -63,7 +67,15 @@ window_claude_status() {
 }
 
 
-# $1=timestamp $2=today_start $3=yesterday_start → "today", "yesterday", or "older"
+# $1=age_seconds → "active" (within 3 days) or "inactive"
+category_for_age() {
+  local age=$1
+  if (( age <= 259200 )); then echo "active"
+  else echo "inactive"
+  fi
+}
+
+# Keep old name for any external callers (unused internally now)
 category_for_timestamp() {
   local ts=$1 today_start=$2 yesterday_start=$3
   if (( ts >= today_start )); then echo "today"
@@ -86,46 +98,74 @@ emit_spacer() {
 
 build_list() {
   local track_session="${1:-}"
-  local now today_start yesterday_start sessions_raw windows_raw
+  local now sessions_raw windows_raw
   now=$(date +%s)
-  today_start=$(date -v0H -v0M -v0S +%s)
-  yesterday_start=$(date -v-1d -v0H -v0M -v0S +%s)
 
   # Two batched tmux calls instead of N+NM per-session/window calls
-  sessions_raw=$(tmux list-sessions -F '#{session_last_attached}|#{session_name}' 2>/dev/null | sort -t'|' -k1 -rn)
+  sessions_raw=$(tmux list-sessions -F '#{session_last_attached}|#{session_name}' 2>/dev/null)
   windows_raw=$(tmux list-windows -a -F '#{session_name}|#{window_index}|#{window_name}|#{pane_current_command}|#{pane_current_path}|#{window_active}|#{@is_claude_running}|#{@claude_done}' 2>/dev/null)
+
+  # Separate _default from all others, then sort each group alphabetically
+  local default_entry active_entries inactive_entries
+  default_entry=$(printf '%s\n' "$sessions_raw" | awk -F'|' '$2 == "_default"')
+  local other_entries
+  other_entries=$(printf '%s\n' "$sessions_raw" | awk -F'|' '$2 != "_default"')
+
+  active_entries=$(
+    while IFS='|' read -r ts name; do
+      [[ -z "$name" ]] && continue
+      local age=$(( now - ts ))
+      [[ "$(category_for_age "$age")" == "active" ]] && printf '%s|%s\n' "$ts" "$name"
+    done <<< "$other_entries" | sort -t'|' -k2
+  )
+  inactive_entries=$(
+    while IFS='|' read -r ts name; do
+      [[ -z "$name" ]] && continue
+      local age=$(( now - ts ))
+      [[ "$(category_for_age "$age")" == "inactive" ]] && printf '%s|%s\n' "$ts" "$name"
+    done <<< "$other_entries" | sort -t'|' -k2
+  )
+
+  # Build ordered list: _default first, then active, then inactive
+  local ordered=""
+  [[ -n "$default_entry" ]] && ordered+="$default_entry"$'\n'
+  [[ -n "$active_entries" ]] && ordered+="$active_entries"$'\n'
+  ordered+="INACTIVE_BOUNDARY"$'\n'
+  [[ -n "$inactive_entries" ]] && ordered+="$inactive_entries"$'\n'
 
   local output=""
   local line_num=0
   local start_pos=1
   local idx=0
-  local prev_category=""
+  local emitted_inactive_header=0
 
   while IFS='|' read -r last_attached name; do
+    if [[ "$last_attached" == "INACTIVE_BOUNDARY" ]]; then
+      [[ -n "$inactive_entries" ]] || continue
+      # Spacer + Inactive header
+      line_num=$(( line_num + 1 ))
+      output+=$(emit_spacer)
+      output+=$'\n'
+      line_num=$(( line_num + 1 ))
+      output+=$(emit_header "Inactive")
+      output+=$'\n'
+      emitted_inactive_header=1
+      continue
+    fi
     [[ -z "$name" ]] && continue
     idx=$(( idx + 1 ))
     local age=$(( now - last_attached ))
-    local rel category
+    local rel
     rel=$(relative_time "$age")
-    category=$(category_for_timestamp "$last_attached" "$today_start" "$yesterday_start")
 
-    if [[ "$category" != "$prev_category" ]]; then
-      if [[ "$category" != "today" ]]; then
-        local header_label
-        case "$category" in
-          yesterday) header_label="Yesterday" ;;
-          older)     header_label="Older" ;;
-        esac
-        line_num=$(( line_num + 1 ))
-        output+=$(emit_header "$header_label")
-        output+=$'\n'
-      fi
-      prev_category="$category"
-    else
+    # Spacer before each session except: the very first, and the one directly after a header
+    if [[ $idx -gt 1 && "$emitted_inactive_header" -ne 1 ]]; then
       line_num=$(( line_num + 1 ))
       output+=$(emit_spacer)
       output+=$'\n'
     fi
+    # Clear the "just emitted header" flag after the first inactive session row
+    [[ "$emitted_inactive_header" -eq 1 ]] && emitted_inactive_header=2
 
     line_num=$(( line_num + 1 ))
     [[ -n "$track_session" && "$name" == "$track_session" ]] && start_pos=$line_num
@@ -146,16 +186,27 @@ build_list() {
       [[ -z "$win_idx" ]] && continue
       win_counter=$(( win_counter + 1 ))
       line_num=$(( line_num + 1 ))
-      local letter wst wicon clean_name detail dir_name
+      local letter wst wicon clean_name detail dir_name branch branch_str
       letter=$(printf "\\x$(printf '%02x' $((96 + win_counter)))")
       wst=$(window_claude_status "$w_running" "$w_done")
       wicon=$(window_icon "$wst" "$win_cmd")
       clean_name=$(strip_claude_prefix "$win_name")
+      # Dedup: window name same as session and idle shell → show "shell"
+      if [[ "$clean_name" == "$name" && "$win_cmd" =~ ^(zsh|bash|fish)$ ]]; then
+        clean_name="shell"
+      fi
       dir_name=$(basename "$win_path")
+      # Git branch — shown in blue when not main/master
+      branch=$(git_branch_for_path "$win_path")
+      branch_str=""
+      if [[ -n "$branch" && "$branch" != "main" && "$branch" != "master" ]]; then
+        branch_str=" ${BLUE}${branch}${RESET}"
+      fi
+      # Column order: repo [branch] · status
       case "$wst" in
-        running) detail="running · $dir_name" ;;
-        done)    detail="done · $dir_name"    ;;
-        *)       detail="$dir_name"           ;;
+        running) detail="${dir_name}${branch_str} · running" ;;
+        done)    detail="${dir_name}${branch_str} · done"    ;;
+        *)       detail="${dir_name}${branch_str}"           ;;
       esac
       # Window row: label+name \x1f detail \x1f key
       output+=$(printf ' %b %b %b%-18s%b%s%b · %s%b%s%b' \
@@ -164,7 +215,7 @@ build_list() {
       output+=$'\n'
     done <<< "$session_windows"
 
-  done <<< "$sessions_raw"
+  done <<< "$ordered"
 
   if [[ -n "$track_session" ]]; then
     printf 'POS:%d\n' "$start_pos"
@@ -174,9 +225,24 @@ build_list() {
 
 preview_session() {
   local session=$1
-  local path
-  path=$(tmux display-message -p -t "$session" '#{session_path}' 2>/dev/null | sed "s|$HOME|~|")
-  printf "${TEAL}%s${RESET}\n${OVERLAY}%s${RESET}\n\n" "$session" "$path"
+  local session_path display_path
+  session_path=$(tmux display-message -p -t "$session" '#{session_path}' 2>/dev/null)
+  display_path=$(printf '%s' "$session_path" | sed "s|$HOME|~|")
+  printf "${TEAL}%s${RESET}\n${OVERLAY}%s${RESET}\n\n" "$session" "$display_path"
+
+  # Git info
+  if git -C "$session_path" rev-parse --is-inside-work-tree &>/dev/null 2>&1; then
+    local branch dirty status_str last_commit
+    branch=$(git -C "$session_path" branch --show-current 2>/dev/null)
+    dirty=$(git -C "$session_path" status --porcelain 2>/dev/null | wc -l | tr -d ' ')
+    status_str="clean"
+    [[ "$dirty" -gt 0 ]] && status_str="${dirty} changed"
+    printf "${PEACH}GIT${RESET}\n"
+    printf "${OVERLAY}⎇ %s · %s${RESET}\n" "$branch" "$status_str"
+    last_commit=$(git -C "$session_path" log -1 --format='%s (%cr)' 2>/dev/null)
+    [[ -n "$last_commit" ]] && printf "${OVERLAY}  %s${RESET}\n" "$last_commit"
+    printf "\n"
+  fi
 
   printf "${PEACH}WINDOWS${RESET}\n"
   while IFS='|' read -r win_idx win_name win_cmd win_path _active w_running w_done; do
@@ -185,9 +251,10 @@ preview_session() {
     wicon=$(window_icon "$wst" "$win_cmd")
     clean_name=$(strip_claude_prefix "$win_name")
     dir_name=$(basename "$win_path")
+    # Column order: repo · status
     case "$wst" in
-      running) detail="running · $dir_name" ;;
-      done)    detail="done · $dir_name"    ;;
+      running) detail="$dir_name · running" ;;
+      done)    detail="$dir_name · done"    ;;
       *)       detail="$dir_name"           ;;
     esac
     printf "${PEACH}%s:${RESET} %b ${TEXT}%s${RESET} ${OVERLAY}· %s${RESET}\n" \
