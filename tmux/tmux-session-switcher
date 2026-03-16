@@ -10,6 +10,7 @@ BLUE='\033[38;2;137;180;250m'    # Catppuccin blue #89b4fa
 MAUVE='\033[38;2;203;166;247m'   # Catppuccin mauve #cba6f7
 OVERLAY='\033[38;2;108;112;134m'
 TEXT='\033[38;2;205;214;244m'
+YELLOW='\033[38;2;249;226;175m'  # Catppuccin Mocha yellow #f9e2af
 RESET='\033[0m'
 
 # Nerd Font icons by window type
@@ -82,6 +83,17 @@ category_for_age() {
   if (( age <= 259200 )); then echo "active"
   else echo "inactive"
   fi
+}
+
+is_worktree_session() { [[ "$1" == */* ]]; }
+
+git_is_dirty() {
+  [[ -n "$(git -C "$1" status --porcelain -uno 2>/dev/null | head -1)" ]]
+}
+
+git_is_merged() {
+  git -C "$1" merge-base --is-ancestor HEAD main 2>/dev/null || \
+    git -C "$1" merge-base --is-ancestor HEAD master 2>/dev/null
 }
 
 # Emit a dimmed category header line (3 US-delimited fields, field 3 empty = non-selectable)
@@ -168,14 +180,10 @@ build_list() {
     # Clear the "just emitted header" flag after the first inactive session row
     [[ "$emitted_inactive_header" -eq 1 ]] && emitted_inactive_header=2
 
+    local session_attention=0
+    local window_rows=""
     line_num=$(( line_num + 1 ))
     [[ -n "$track_session" && "$name" == "$track_session" ]] && start_pos=$line_num
-
-    # Session row: label+name \x1f detail \x1f key
-    output+=$(printf '%b   %b%-22s%b%s%b · %s%b%s%b' \
-      "${MAUVE}${idx}${RESET}" "${TEXT}" "$name" "${RESET}" \
-      "$US" "${OVERLAY}" "$rel" "${RESET}" "$US" "s:${name}")
-    output+=$'\n'
 
     # Window rows — matched from batched data (exact session name, no regex)
     local win_counter=0
@@ -227,12 +235,47 @@ build_list() {
         done)    detail="${dir_name}${branch_str} · done"    ;;
         *)       detail="${dir_name}${branch_str}"           ;;
       esac
+      # Attention badges
+      local attn=""
+      # 1. Claude done badge
+      [[ "$wst" == "done" ]] && { attn+=" ${GREEN}●${RESET}"; session_attention=$(( session_attention + 1 )); }
+      # 2. Dirty working tree (only git repos, skip if already "done" to reduce noise)
+      local is_dirty=0
+      if [[ -n "$branch" && "$wst" != "done" ]]; then
+        git_is_dirty "$win_path" && { is_dirty=1; attn+=" ${PEACH}✦${RESET}"; session_attention=$(( session_attention + 1 )); }
+      fi
+      # 3. Stale worktree (only worktree sessions)
+      if is_worktree_session "$name" && [[ -n "$branch" ]]; then
+        local is_stale=0
+        if git_is_merged "$win_path"; then
+          is_stale=1
+        elif [[ "$wst" == "done" && "$is_dirty" -eq 0 ]] && ! git_is_dirty "$win_path"; then
+          is_stale=1
+        fi
+        [[ "$is_stale" -eq 1 ]] && { attn+=" ${YELLOW}󰇝${RESET}"; session_attention=$(( session_attention + 1 )); }
+      fi
       # Window row: label+name \x1f detail \x1f key
-      output+=$(printf ' %b %b %b%-18s%b%s%b · %s%b%s%b' \
+      window_rows+=$(printf ' %b %b %b%-18s%b%s%b · %s%s%b%s%b' \
         "${MAUVE}${idx}${letter}${RESET}" "$wicon" "${TEXT}" "$clean_name" "${RESET}" \
-        "$US" "${OVERLAY}" "$detail" "${RESET}" "$US" "w:${name}:${win_idx}")
-      output+=$'\n'
+        "$US" "${OVERLAY}" "$detail" "$attn" "${RESET}" "$US" "w:${name}:${win_idx}")
+      window_rows+=$'\n'
     done <<< "$session_windows"
+
+    # Forgotten session: inactive adds +1 to attention count
+    [[ "$(category_for_age "$age")" == "inactive" ]] && session_attention=$(( session_attention + 1 ))
+
+    # Session row: label+name \x1f detail \x1f key
+    local name_field
+    if [[ "$session_attention" -gt 0 ]]; then
+      name_field=$(printf '%-22s %b⚠ %d%b' "$name" "${YELLOW}" "$session_attention" "${RESET}")
+    else
+      name_field=$(printf '%-22s' "$name")
+    fi
+    output+=$(printf '%b   %b%s%b%s%b · %s%b%s%b' \
+      "${MAUVE}${idx}${RESET}" "${TEXT}" "$name_field" "${RESET}" \
+      "$US" "${OVERLAY}" "$rel" "${RESET}" "$US" "s:${name}")
+    output+=$'\n'
+    output+="$window_rows"
 
   done <<< "$ordered"
 

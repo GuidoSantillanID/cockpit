@@ -820,3 +820,235 @@ setup_tmux_mock() {
   run handle_selection "w:mysession:1"
   [ "$status" -eq 0 ]
 }
+
+# ── is_worktree_session ───────────────────────────────────────────────────────
+
+@test "is_worktree_session: returns true for name with slash" {
+  run is_worktree_session "myapp/feat"
+  [ "$status" -eq 0 ]
+}
+
+@test "is_worktree_session: returns false for name without slash" {
+  run is_worktree_session "myapp"
+  [ "$status" -eq 1 ]
+}
+
+# ── git_is_dirty ──────────────────────────────────────────────────────────────
+
+@test "git_is_dirty: clean repo returns false" {
+  local tmpdir
+  tmpdir=$(mktemp -d)
+  git init -q "$tmpdir"
+  run git_is_dirty "$tmpdir"
+  rm -rf "$tmpdir"
+  [ "$status" -eq 1 ]
+}
+
+@test "git_is_dirty: repo with staged changes returns true" {
+  local tmpdir
+  tmpdir=$(mktemp -d)
+  git init -q "$tmpdir"
+  echo "content" > "$tmpdir/file.txt"
+  git -C "$tmpdir" add .
+  run git_is_dirty "$tmpdir"
+  rm -rf "$tmpdir"
+  [ "$status" -eq 0 ]
+}
+
+# ── git_is_merged ─────────────────────────────────────────────────────────────
+
+@test "git_is_merged: HEAD on main branch returns true" {
+  local tmpdir
+  tmpdir=$(mktemp -d)
+  git init -q "$tmpdir"
+  GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t.com \
+  GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t.com \
+    git -C "$tmpdir" commit --allow-empty -m "init" 2>/dev/null || true
+  run git_is_merged "$tmpdir"
+  rm -rf "$tmpdir"
+  [ "$status" -eq 0 ]
+}
+
+@test "git_is_merged: unmerged feature branch returns false" {
+  local tmpdir
+  tmpdir=$(mktemp -d)
+  git init -q "$tmpdir"
+  GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t.com \
+  GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t.com \
+    git -C "$tmpdir" commit --allow-empty -m "init" 2>/dev/null || true
+  git -C "$tmpdir" checkout -q -b feat/unmerged 2>/dev/null
+  GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t.com \
+  GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t.com \
+    git -C "$tmpdir" commit --allow-empty -m "feature" 2>/dev/null || true
+  run git_is_merged "$tmpdir"
+  rm -rf "$tmpdir"
+  [ "$status" -ne 0 ]
+}
+
+# ── attention badges in build_list ───────────────────────────────────────────
+
+@test "build_list: claude done window shows green dot badge" {
+  local now
+  now=$(date +%s)
+  tmux() {
+    case "$1 $2" in
+      "list-sessions -F") printf '%s|myapp\n' "$(( now - 60 ))" ;;
+      "list-windows -a")  printf 'myapp|0|dev|zsh|/tmp|1||done\n' ;;
+    esac
+  }
+  export -f tmux
+  local US=$'\x1f'
+  run build_list ""
+  local detail=""
+  for line in "${lines[@]}"; do
+    local key
+    key=$(printf '%s' "$line" | cut -d"$US" -f3)
+    if [[ "$key" == "w:myapp:0" ]]; then
+      detail=$(printf '%s' "$line" | cut -d"$US" -f2)
+      break
+    fi
+  done
+  [[ "$detail" == *"●"* ]]
+}
+
+@test "build_list: dirty tree shows peach diamond badge" {
+  local now
+  now=$(date +%s)
+  local tmpdir
+  tmpdir=$(mktemp -d)
+  git init -q "$tmpdir"
+  git -C "$tmpdir" checkout -q -b feat/dirty 2>/dev/null || \
+    git -C "$tmpdir" symbolic-ref HEAD refs/heads/feat/dirty
+  echo "content" > "$tmpdir/file.txt"
+  git -C "$tmpdir" add .
+  tmux() {
+    case "$1 $2" in
+      "list-sessions -F") printf '%s|myapp\n' "$(( now - 60 ))" ;;
+      "list-windows -a")  printf 'myapp|0|dev|zsh|%s|1||\n' "$tmpdir" ;;
+    esac
+  }
+  export -f tmux
+  local US=$'\x1f'
+  run build_list ""
+  rm -rf "$tmpdir"
+  local detail=""
+  for line in "${lines[@]}"; do
+    local key
+    key=$(printf '%s' "$line" | cut -d"$US" -f3)
+    if [[ "$key" == w:myapp:* ]]; then
+      detail=$(printf '%s' "$line" | cut -d"$US" -f2)
+      break
+    fi
+  done
+  [[ "$detail" == *"✦"* ]]
+}
+
+@test "build_list: worktree session with done+clean window shows stale badge" {
+  local now
+  now=$(date +%s)
+  local tmpdir
+  tmpdir=$(mktemp -d)
+  git init -q "$tmpdir"
+  git -C "$tmpdir" checkout -q -b feat/stale 2>/dev/null || \
+    git -C "$tmpdir" symbolic-ref HEAD refs/heads/feat/stale
+  tmux() {
+    case "$1 $2" in
+      # Session name "myapp/feat" has slash → is_worktree_session = true
+      "list-sessions -F") printf '%s|myapp/feat\n' "$(( now - 60 ))" ;;
+      "list-windows -a")  printf 'myapp/feat|0|dev|zsh|%s|1||done\n' "$tmpdir" ;;
+    esac
+  }
+  export -f tmux
+  local US=$'\x1f'
+  run build_list ""
+  rm -rf "$tmpdir"
+  local detail=""
+  for line in "${lines[@]}"; do
+    local key
+    key=$(printf '%s' "$line" | cut -d"$US" -f3)
+    if [[ "$key" == "w:myapp/feat:0" ]]; then
+      detail=$(printf '%s' "$line" | cut -d"$US" -f2)
+      break
+    fi
+  done
+  [[ "$detail" == *"󰇝"* ]]
+}
+
+@test "build_list: non-worktree session does not show stale badge" {
+  local now
+  now=$(date +%s)
+  local tmpdir
+  tmpdir=$(mktemp -d)
+  git init -q "$tmpdir"
+  git -C "$tmpdir" checkout -q -b feat/test 2>/dev/null || \
+    git -C "$tmpdir" symbolic-ref HEAD refs/heads/feat/test
+  tmux() {
+    case "$1 $2" in
+      "list-sessions -F") printf '%s|myapp\n' "$(( now - 60 ))" ;;
+      "list-windows -a")  printf 'myapp|0|dev|zsh|%s|1||done\n' "$tmpdir" ;;
+    esac
+  }
+  export -f tmux
+  local US=$'\x1f'
+  run build_list ""
+  rm -rf "$tmpdir"
+  local detail=""
+  for line in "${lines[@]}"; do
+    local key
+    key=$(printf '%s' "$line" | cut -d"$US" -f3)
+    if [[ "$key" == "w:myapp:0" ]]; then
+      detail=$(printf '%s' "$line" | cut -d"$US" -f2)
+      break
+    fi
+  done
+  [[ "$detail" != *"󰇝"* ]]
+}
+
+@test "build_list: inactive session shows attention count badge" {
+  local now
+  now=$(date +%s)
+  local inactive_ts=$(( now - 86400 * 4 ))  # 4 days ago → inactive
+  tmux() {
+    case "$1 $2" in
+      "list-sessions -F") printf '%s|oldapp\n' "$inactive_ts" ;;
+      "list-windows -a")  printf 'oldapp|0|dev|zsh|/tmp|1||\n' ;;
+    esac
+  }
+  export -f tmux
+  local US=$'\x1f'
+  run build_list ""
+  local field1=""
+  for line in "${lines[@]}"; do
+    local key
+    key=$(printf '%s' "$line" | cut -d"$US" -f3)
+    if [[ "$key" == "s:oldapp" ]]; then
+      field1=$(printf '%s' "$line" | cut -d"$US" -f1)
+      break
+    fi
+  done
+  [[ "$field1" == *"⚠"* ]]
+}
+
+@test "build_list: active session with no attention has no badge" {
+  local now
+  now=$(date +%s)
+  tmux() {
+    case "$1 $2" in
+      "list-sessions -F") printf '%s|myapp\n' "$(( now - 60 ))" ;;
+      "list-windows -a")  printf 'myapp|0|dev|zsh|/tmp|1||\n' ;;
+    esac
+  }
+  export -f tmux
+  local US=$'\x1f'
+  run build_list ""
+  local field1=""
+  for line in "${lines[@]}"; do
+    local key
+    key=$(printf '%s' "$line" | cut -d"$US" -f3)
+    if [[ "$key" == "s:myapp" ]]; then
+      field1=$(printf '%s' "$line" | cut -d"$US" -f1)
+      break
+    fi
+  done
+  [[ "$field1" != *"⚠"* ]]
+}
