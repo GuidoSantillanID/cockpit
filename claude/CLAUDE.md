@@ -43,6 +43,10 @@ Examples:
 
 Never use `${ENV_VAR}` substitution in a committed `.npmrc` for auth tokens. pnpm warns on every invocation when the var is unset — including non-install commands like `typecheck` and `lint` — and env propagation through turbo/monorepo child processes is unreliable. Instead: have CI append the auth line at runtime (e.g. `echo '//registry/:_authToken=...' >> .npmrc`); have local devs configure once via `pnpm config set //registry/:_authToken <token>` (writes to `~/.npmrc`).
 
+## File operations
+
+Never derive file write paths from exploration results — always use the session's primary working directory as the base.
+
 ## wt worktrees
 
 When `.wt-meta` is present in the repo root, this is a worktree managed by the `wt` CLI. Never run `wt` commands via Bash tool — always tell the user to run them in their terminal:

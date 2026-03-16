@@ -1,6 +1,6 @@
 ---
 name: commit
-description: Stage all files, generate a commit message from the diff, and commit locally. No prompts.
+description: "ONLY invoke when user explicitly runs /commit. Do NOT trigger on words like 'commit', 'save changes', 'create a commit', etc."
 user-invocable: true
 metadata:
   author: guido
