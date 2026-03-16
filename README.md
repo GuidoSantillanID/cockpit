@@ -19,6 +19,14 @@ See [SETUP.md](SETUP.md) for the full workflow walkthrough and how the pieces co
 | `claude/ccline/models.toml` | `~/.claude/ccline/models.toml` |
 | `claude/ccline/themes/guido-theme.toml` | `~/.claude/ccline/themes/guido-theme.toml` |
 | `shell-functions.zsh` | `~/shell-functions.zsh` |
+| `claude/CLAUDE.md` | `~/.claude/CLAUDE.md` |
+| `claude/skills/commit/SKILL.md` | `~/.claude/skills/commit/SKILL.md` |
+| `claude/skills/init/SKILL.md` | `~/.claude/skills/init/SKILL.md` |
+| `claude/skills/p/SKILL.md` | `~/.claude/skills/p/SKILL.md` |
+| `claude/skills/review-pr/SKILL.md` | `~/.claude/skills/review-pr/SKILL.md` |
+| `claude/skills/test-pr/SKILL.md` | `~/.claude/skills/test-pr/SKILL.md` |
+| `claude/skills/update-docs/SKILL.md` | `~/.claude/skills/update-docs/SKILL.md` |
+| `claude/skills/update-pr-description/SKILL.md` | `~/.claude/skills/update-pr-description/SKILL.md` |
 
 ## Syncing
 
