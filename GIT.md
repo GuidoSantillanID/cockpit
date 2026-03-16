@@ -21,11 +21,13 @@ Every `git diff`, `git show`, `git log -p`, and `git blame` automatically flows 
 | Command | Does |
 |---|---|
 | `git diff` | Default unified diff |
-| `git diffs` | Side-by-side mode — use when terminal is wide enough |
+| `git diffs` | Side-by-side diff — use when terminal is wide enough |
 | `git review` | Diff of the last commit — quick check of what Claude just changed |
+| `git reviews` | Side-by-side diff of the last commit |
 | `git gl` | Oneline log with relative time and branch decorations |
 | `git glh` | Same as `gl` but includes short commit hash |
 | `git glp` | Patch log — full diff for every commit, paginated through delta |
+| `git glps` | Side-by-side patch log |
 | `git pushpr <branch>` | Push HEAD to a named remote branch |
 
 ---

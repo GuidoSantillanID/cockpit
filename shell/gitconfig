@@ -42,8 +42,10 @@
 	gl = log --pretty=format:'%Cgreen%<(14)%ar%Creset %C(dim)•%Creset%C(auto)%d%Creset %C(bold)%s%Creset'
 	glh = log --pretty=format:'%Cgreen%<(14)%ar%Creset %C(dim)•%Creset %C(dim yellow)%h%Creset%C(auto)%d%Creset %C(bold)%s%Creset'
 	review = diff HEAD~1
+	reviews = -c delta.side-by-side=true diff HEAD~1
 	diffs = -c delta.side-by-side=true diff
 	glp = log -p
+	glps = -c delta.side-by-side=true log -p
 [log]
 	excludeDecoration = refs/remotes/origin/HEAD
 [push]
