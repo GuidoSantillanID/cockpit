@@ -46,6 +46,8 @@ copy_if_exists "$HOME/.claude/skills/update-docs/SKILL.md"          "$REPO_DIR/c
 copy_if_exists "$HOME/.claude/skills/update-pr-description/SKILL.md" "$REPO_DIR/claude/skills/update-pr-description/SKILL.md"
 copy_if_exists "$HOME/.claude/skills/init/SKILL.md"                 "$REPO_DIR/claude/skills/init/SKILL.md"
 copy_if_exists "$HOME/.config/bat/themes/Catppuccin Mocha.tmTheme"   "$REPO_DIR/bat/themes/Catppuccin Mocha.tmTheme"
+copy_if_exists "$HOME/Library/Preferences/glow/glow.yml"              "$REPO_DIR/glow/glow.yml"
+copy_if_exists "$HOME/Library/Preferences/glow/catppuccin-mocha.json" "$REPO_DIR/glow/themes/catppuccin-mocha.json"
 copy_if_exists "$HOME/.gitconfig"                                     "$REPO_DIR/shell/gitconfig"
 copy_if_exists "$HOME/.zprofile"                                      "$REPO_DIR/shell/zprofile"
 copy_if_exists "$HOME/.p10k.zsh"                                      "$REPO_DIR/shell/p10k.zsh"
