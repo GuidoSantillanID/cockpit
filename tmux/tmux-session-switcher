@@ -77,10 +77,10 @@ window_claude_status() {
 }
 
 
-# $1=age_seconds → "active" (within 3 days) or "inactive"
+# $1=age_seconds → "active" (within 2 days) or "inactive"
 category_for_age() {
   local age=$1
-  if (( age <= 259200 )); then echo "active"
+  if (( age <= 172800 )); then echo "active"
   else echo "inactive"
   fi
 }

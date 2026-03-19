@@ -61,20 +61,20 @@ setup() {
 
 # ── category_for_age ──────────────────────────────────────────────────────────
 # Signature: category_for_age <age_seconds> → "active" or "inactive"
-# Active: accessed within 3 days (259200 seconds); inactive: older
+# Active: accessed within 2 days (172800 seconds); inactive: older
 
-@test "category_for_age: active when within 3 days" {
+@test "category_for_age: active when within 2 days" {
   run category_for_age 3600      # 1h ago
   [ "$output" = "active" ]
 }
 
-@test "category_for_age: active at exactly 3 days boundary" {
-  run category_for_age 259200    # exactly 3 days
+@test "category_for_age: active at exactly 2 days boundary" {
+  run category_for_age 172800    # exactly 2 days
   [ "$output" = "active" ]
 }
 
-@test "category_for_age: inactive when older than 3 days" {
-  run category_for_age 259201    # 3 days + 1 second
+@test "category_for_age: inactive when older than 2 days" {
+  run category_for_age 172801    # 2 days + 1 second
   [ "$output" = "inactive" ]
 }
 
