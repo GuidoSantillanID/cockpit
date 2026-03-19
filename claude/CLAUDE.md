@@ -29,6 +29,8 @@ Examples:
 ## Commiting
 
 - Don't add yourself as the author of the commit. Leave it blank so that I can add myself as the author when I commit.
+- Never perform any git operation that creates or modifies history — commit, amend, squash, rebase, cherry-pick, reset — without asking for explicit approval first. This applies in all modes.
+- You may suggest when it seems like a good time to commit, but always wait for my approval before executing.
 
 ## Attribution
 
