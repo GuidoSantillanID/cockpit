@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# pre-commit hook: sync live config files into the repo before each commit.
+# If sync finds untracked changes, abort and prompt to stage them first.
+
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+
+echo "pre-commit: syncing live configs..."
+"$REPO_ROOT/sync.sh" > /dev/null
+
+if ! git -C "$REPO_ROOT" diff --quiet; then
+  echo ""
+  echo "pre-commit: sync found changes not yet staged:"
+  git -C "$REPO_ROOT" diff --stat
+  echo ""
+  echo "Stage them and commit again:"
+  echo "  git add -u && git commit"
+  exit 1
+fi

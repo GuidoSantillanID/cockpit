@@ -114,18 +114,18 @@ Default is 2000 lines, which gets exhausted quickly with verbose Claude Code out
 
 ### Status Bar
 
-```
-set -g display-time 1000
-set -g status on
-set -g status-position top
-set -g status-left ""
-set -g status-right '#{?client_prefix,#[bg=colour1 fg=colour255 bold] PREFIX #[default] ,}#[fg=#{@thm_crust},bg=#{@thm_teal}] session: #S '
-set -g status-right-length 100
-```
-
 Status bar is at the top. `status-left` is empty — all info is on the right. The right side shows:
-- A red `PREFIX` badge when the prefix key is active (useful visual feedback)
+- A red `PREFIX` badge when the prefix key is active
+- A pane state badge when 2 panes exist (see below)
 - Current session name in teal
+
+**Pane state badge** — only shown when a secondary pane exists:
+
+| Badge | State | Color |
+|-------|-------|-------|
+| `󰕮 SIDE` | Side-by-side view (unzoomed) | Teal text |
+| `󰆍 TERM` | Secondary pane fullscreen (zoomed pane 2) | Peach bg |
+| `󰈉 HIDDEN` | Secondary pane hidden (zoomed pane 1) | Dim bg |
 
 `display-time` controls how long tmux messages (e.g. save/restore notifications) stay visible.
 
@@ -267,6 +267,8 @@ These three style options use hardcoded hex (catppuccin mocha values) because st
 | `Ctrl+a Ctrl+a` | Send literal `^A` to terminal (readline beginning-of-line) |
 | `Ctrl+a v` | Vertical split (opens in current path) |
 | `Ctrl+a h` | Horizontal split (opens in current path) |
+| `Ctrl+a e` | Toggle secondary pane side-by-side (󰕮 SIDE ↔ 󰈉 HIDDEN) |
+| `Ctrl+a t` | Toggle secondary pane fullscreen (󰆍 TERM, switches panes while zoomed) |
 | `Ctrl+a f` | Sessionizer — fuzzy search + open/switch project session |
 | `Ctrl+a s` | choose-tree (native tmux, sessions only) |
 | `Ctrl+a w` | Session switcher (fzf popup — sessions + windows) |
@@ -422,6 +424,13 @@ cd ~/Documents/dev/wt
 ### 2. Install workflow config
 
 Copy the files from this repo to their destinations — see [README.md](README.md) for the full mapping.
+
+Install the pre-commit hook so `sync.sh` runs automatically before each commit:
+
+```bash
+cd ~/Documents/dev/cockpit
+ln -sf ../../hooks/pre-commit .git/hooks/pre-commit
+```
 
 Edit `~/.local/bin/tmux-sessionizer` — update the `projects=` and `worktrees=` variables to set your local project directories.
 
