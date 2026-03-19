@@ -1,2 +1,6 @@
 term = xterm-256color
 copy-on-select = true
+theme = Catppuccin Frappe
+macos-icon = custom
+macos-custom-icon = ~/.config/ghostty/Clauddy-Minimal.png
+window-save-state = always
