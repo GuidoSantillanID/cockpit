@@ -1053,6 +1053,54 @@ setup_tmux_mock() {
   [[ "$field1" != *"⚠"* ]]
 }
 
+# ── _git_lookup ───────────────────────────────────────────────────────────────
+
+@test "_git_lookup: cache miss sets empty branch and zero flags" {
+  _git_lookup "" "/some/path"
+  [ "$_gl_branch" = "" ]
+  [ "$_gl_dirty" = "0" ]
+  [ "$_gl_merged" = "0" ]
+}
+
+@test "_git_lookup: cache hit returns correct branch name" {
+  local cache
+  cache=$(printf '/repo/foo\x1emain\x1e0\x1e0\n')
+  _git_lookup "$cache" "/repo/foo"
+  [ "$_gl_branch" = "main" ]
+}
+
+@test "_git_lookup: returns dirty=1 when path is dirty" {
+  local cache
+  cache=$(printf '/repo/foo\x1efeat/x\x1e1\x1e0\n')
+  _git_lookup "$cache" "/repo/foo"
+  [ "$_gl_dirty" = "1" ]
+}
+
+@test "_git_lookup: returns merged=1 when branch is merged" {
+  local cache
+  cache=$(printf '/repo/foo\x1efeat/x\x1e0\x1e1\n')
+  _git_lookup "$cache" "/repo/foo"
+  [ "$_gl_merged" = "1" ]
+}
+
+@test "_git_lookup: selects correct entry from multi-path cache" {
+  local cache
+  cache=$(printf '/repo/a\x1efeat/a\x1e0\x1e0\n/repo/b\x1efeat/b\x1e1\x1e1\n')
+  _git_lookup "$cache" "/repo/b"
+  [ "$_gl_branch" = "feat/b" ]
+  [ "$_gl_dirty" = "1" ]
+  [ "$_gl_merged" = "1" ]
+}
+
+@test "_git_lookup: unmatched path leaves globals at defaults" {
+  local cache
+  cache=$(printf '/repo/a\x1emain\x1e0\x1e0\n')
+  _git_lookup "$cache" "/repo/other"
+  [ "$_gl_branch" = "" ]
+  [ "$_gl_dirty" = "0" ]
+  [ "$_gl_merged" = "0" ]
+}
+
 # ── build_list: parallel git cache dedup ──────────────────────────────────────
 
 @test "build_list: dedup — same path across windows queries git once" {

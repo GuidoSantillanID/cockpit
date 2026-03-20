@@ -112,7 +112,9 @@ _git_lookup() {
   local cache="$1" path="$2"
   _gl_branch="" _gl_dirty=0 _gl_merged=0
   while IFS=$'\x1e' read -r p b d m; do
-    [[ "$p" == "$path" ]] && { _gl_branch="$b"; _gl_dirty="${d:-0}"; _gl_merged="${m:-0}"; return; }
+    if [[ "$p" == "$path" ]]; then
+      _gl_branch="$b"; _gl_dirty="${d:-0}"; _gl_merged="${m:-0}"; return
+    fi
   done <<< "$cache"
 }
 
