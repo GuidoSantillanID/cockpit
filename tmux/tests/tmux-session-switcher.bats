@@ -1101,6 +1101,155 @@ setup_tmux_mock() {
   [ "$_gl_merged" = "0" ]
 }
 
+# ── build_list: skip_git ──────────────────────────────────────────────────────
+
+@test "build_list: skip_git omits branch from detail" {
+  local now
+  now=$(date +%s)
+  local tmpdir
+  tmpdir=$(mktemp -d)
+  git init -q "$tmpdir"
+  git -C "$tmpdir" checkout -q -b feat/some-branch 2>/dev/null || \
+    git -C "$tmpdir" symbolic-ref HEAD refs/heads/feat/some-branch
+  tmux() {
+    case "$1 $2" in
+      "list-sessions -F") printf '%s|myproject\n' "$(( now - 60 ))" ;;
+      "list-windows -a")  printf 'myproject|0|terminal|zsh|%s|1||\n' "$tmpdir" ;;
+    esac
+  }
+  export -f tmux
+  local US=$'\x1f'
+  run build_list "" "1"
+  rm -rf "$tmpdir"
+  local detail=""
+  for line in "${lines[@]}"; do
+    local key
+    key=$(printf '%s' "$line" | cut -d"$US" -f3)
+    if [[ "$key" == w:myproject:* ]]; then
+      detail=$(printf '%s' "$line" | cut -d"$US" -f2)
+      break
+    fi
+  done
+  [[ "$detail" != *"feat/some-branch"* ]]
+}
+
+@test "build_list: skip_git omits dirty badge" {
+  local now
+  now=$(date +%s)
+  local tmpdir
+  tmpdir=$(mktemp -d)
+  git init -q "$tmpdir"
+  git -C "$tmpdir" checkout -q -b feat/dirty 2>/dev/null || \
+    git -C "$tmpdir" symbolic-ref HEAD refs/heads/feat/dirty
+  echo "content" > "$tmpdir/file.txt"
+  git -C "$tmpdir" add .
+  tmux() {
+    case "$1 $2" in
+      "list-sessions -F") printf '%s|myapp\n' "$(( now - 60 ))" ;;
+      "list-windows -a")  printf 'myapp|0|dev|zsh|%s|1||\n' "$tmpdir" ;;
+    esac
+  }
+  export -f tmux
+  local US=$'\x1f'
+  run build_list "" "1"
+  rm -rf "$tmpdir"
+  local detail=""
+  for line in "${lines[@]}"; do
+    local key
+    key=$(printf '%s' "$line" | cut -d"$US" -f3)
+    if [[ "$key" == w:myapp:* ]]; then
+      detail=$(printf '%s' "$line" | cut -d"$US" -f2)
+      break
+    fi
+  done
+  [[ "$detail" != *"✦"* ]]
+}
+
+@test "build_list: skip_git omits stale badge" {
+  local now
+  now=$(date +%s)
+  local tmpdir
+  tmpdir=$(mktemp -d)
+  git init -q "$tmpdir"
+  git -C "$tmpdir" checkout -q -b feat/stale 2>/dev/null || \
+    git -C "$tmpdir" symbolic-ref HEAD refs/heads/feat/stale
+  tmux() {
+    case "$1 $2" in
+      "list-sessions -F") printf '%s|myapp/feat\n' "$(( now - 60 ))" ;;
+      "list-windows -a")  printf 'myapp/feat|0|dev|zsh|%s|1||done\n' "$tmpdir" ;;
+    esac
+  }
+  export -f tmux
+  local US=$'\x1f'
+  run build_list "" "1"
+  rm -rf "$tmpdir"
+  local detail=""
+  for line in "${lines[@]}"; do
+    local key
+    key=$(printf '%s' "$line" | cut -d"$US" -f3)
+    if [[ "$key" == "w:myapp/feat:0" ]]; then
+      detail=$(printf '%s' "$line" | cut -d"$US" -f2)
+      break
+    fi
+  done
+  [[ "$detail" != *"󰇝"* ]]
+}
+
+@test "build_list: skip_git preserves session and window keys" {
+  local now
+  now=$(date +%s)
+  tmux() {
+    case "$1 $2" in
+      "list-sessions -F") printf '%s|myapp\n' "$(( now - 60 ))" ;;
+      "list-windows -a")  printf 'myapp|0|dev|zsh|/tmp|1||\n' ;;
+    esac
+  }
+  export -f tmux
+  local US=$'\x1f'
+  run build_list "" "1"
+  local has_session_key=0 has_window_key=0
+  for line in "${lines[@]}"; do
+    local key
+    key=$(printf '%s' "$line" | cut -d"$US" -f3)
+    [[ "$key" == "s:myapp" ]] && has_session_key=1
+    [[ "$key" == "w:myapp:0" ]] && has_window_key=1
+  done
+  [ "$has_session_key" -eq 1 ]
+  [ "$has_window_key" -eq 1 ]
+}
+
+# ── build_list: git status -b edge case ──────────────────────────────────────
+
+@test "build_list: handles repo with no commits (shows branch name)" {
+  local now
+  now=$(date +%s)
+  local tmpdir
+  tmpdir=$(mktemp -d)
+  git init -q "$tmpdir"
+  git -C "$tmpdir" symbolic-ref HEAD refs/heads/feat/new-branch
+  tmux() {
+    case "$1 $2" in
+      "list-sessions -F") printf '%s|myproject\n' "$(( now - 60 ))" ;;
+      "list-windows -a")  printf 'myproject|0|terminal|zsh|%s|1||\n' "$tmpdir" ;;
+    esac
+  }
+  export -f tmux
+  local US=$'\x1f'
+  run build_list ""
+  rm -rf "$tmpdir"
+  [ "$status" -eq 0 ]
+  local detail=""
+  for line in "${lines[@]}"; do
+    local key
+    key=$(printf '%s' "$line" | cut -d"$US" -f3)
+    if [[ "$key" == w:myproject:* ]]; then
+      detail=$(printf '%s' "$line" | cut -d"$US" -f2)
+      break
+    fi
+  done
+  [[ "$detail" == *"feat/new-branch"* ]]
+}
+
 # ── build_list: parallel git cache dedup ──────────────────────────────────────
 
 @test "build_list: dedup — same path across windows queries git once" {
@@ -1115,11 +1264,10 @@ setup_tmux_mock() {
   export GIT_BRANCH_COUNT_FILE="$count_file"
   git() {
     case "$*" in
-      *"branch --show-current"*)
+      *"status -b --porcelain"*)
         printf '1\n' >> "$GIT_BRANCH_COUNT_FILE"
-        echo "feat/test"
+        printf '## feat/test\n'
         ;;
-      *"status --porcelain"*) : ;;
       *"merge-base"*) return 1 ;;
       *) return 1 ;;
     esac

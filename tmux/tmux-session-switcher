@@ -120,33 +120,53 @@ _git_lookup() {
 
 build_list() {
   local track_session="${1:-}"
+  local skip_git="${2:-}"
   local now sessions_raw windows_raw panes_raw git_cache
-  now=$(date +%s)
+  printf -v now '%(%s)T' -1
 
   # Three batched tmux calls instead of N+NM per-session/window calls
   sessions_raw=$(tmux list-sessions -F '#{session_last_attached}|#{session_name}' 2>/dev/null)
   windows_raw=$(tmux list-windows -a -F '#{session_name}|#{window_index}|#{window_name}|#{pane_current_command}|#{pane_current_path}|#{window_active}|#{@is_claude_running}|#{@claude_done}' 2>/dev/null)
   panes_raw=$(tmux list-panes -a -F '#{session_name}|#{window_index}|#{pane_index}|#{pane_current_command}|#{pane_current_path}|#{pane_active}|#{@is_claude_running}|#{@claude_done}' 2>/dev/null)
 
-  # Build git cache (dedup + parallel)
-  git_cache=$(
-    unique_paths=$(printf '%s\n' "$windows_raw" | awk -F'|' 'NF>0 {print $5}' | sort -u)
-    while IFS= read -r path; do
-      [[ -z "$path" ]] && continue
-      (
-        branch=$(git -C "$path" branch --show-current 2>/dev/null || echo "")
-        dirty=0
-        merged=0
-        if [[ -n "$branch" ]]; then
-          [[ -n "$(git -C "$path" status --porcelain -uno 2>/dev/null | head -1)" ]] && dirty=1
-          { git -C "$path" merge-base --is-ancestor HEAD main 2>/dev/null || \
-            git -C "$path" merge-base --is-ancestor HEAD master 2>/dev/null; } && merged=1
-        fi
-        printf '%s\x1e%s\x1e%s\x1e%s\n' "$path" "$branch" "$dirty" "$merged"
-      ) &
-    done <<< "$unique_paths"
-    wait
-  )
+  # Build git cache (dedup + parallel) — skip when skip_git is set
+  git_cache=""
+  if [[ -z "$skip_git" ]]; then
+    git_cache=$(
+      declare -A _seen_paths
+      unique_paths=""
+      while IFS='|' read -r _s _i _n _c p _rest; do
+        [[ -z "$p" || -n "${_seen_paths[$p]+x}" ]] && continue
+        _seen_paths[$p]=1
+        unique_paths+="$p"$'\n'
+      done <<< "$windows_raw"
+      while IFS= read -r path; do
+        [[ -z "$path" ]] && continue
+        (
+          if ! git_out=$(git -C "$path" status -b --porcelain -uno 2>/dev/null); then
+            printf '%s\x1e\x1e0\x1e0\n' "$path"
+            exit 0
+          fi
+          header="${git_out%%$'\n'*}"
+          header="${header#\#\# }"
+          branch="" dirty=0 merged=0
+          if [[ "$header" == "No commits yet on "* ]]; then
+            branch="${header#No commits yet on }"
+          else
+            branch="${header%%...*}"
+            branch="${branch%% \[*}"
+          fi
+          if [[ -n "$branch" ]]; then
+            [[ "$git_out" == *$'\n'* ]] && dirty=1
+            { git -C "$path" merge-base --is-ancestor HEAD main 2>/dev/null || \
+              git -C "$path" merge-base --is-ancestor HEAD master 2>/dev/null; } && merged=1
+          fi
+          printf '%s\x1e%s\x1e%s\x1e%s\n' "$path" "$branch" "$dirty" "$merged"
+        ) &
+      done <<< "$unique_paths"
+      wait
+    )
+  fi
 
   # Separate _default from all others (bash loops, no awk)
   local default_entry="" other_entries=""
@@ -492,10 +512,16 @@ if [[ "$1" == "--list" ]]; then
   exit 0
 fi
 
+# --list-fast mode (skip git, used for phase-1 of two-phase load)
+if [[ "$1" == "--list-fast" ]]; then
+  build_list "" "1"
+  exit 0
+fi
+
 script_path="$(realpath "$0")"
 current_session=$(tmux display-message -p '#{session_name}' 2>/dev/null)
 
-list_output=$(build_list "$current_session")
+list_output=$(build_list "$current_session" "1")
 start_pos=$(printf '%s' "$list_output" | head -1 | sed 's/^POS://')
 list_body=$(printf '%s' "$list_output" | tail -n +2)
 
@@ -503,6 +529,7 @@ selected=$(printf '%s' "$list_body" | fzf \
   --ansi \
   --no-sort \
   --cycle \
+  --track \
   --layout=reverse-list \
   --delimiter=$'\x1f' \
   --with-nth=1,2 \
@@ -510,6 +537,7 @@ selected=$(printf '%s' "$list_body" | fzf \
   --preview="$script_path --preview {3}" \
   --preview-window='right:35%:wrap' \
   --bind="start:pos($start_pos)" \
+  --bind="load:reload-sync($script_path --list)+unbind(load)" \
   --bind="ctrl-d:execute-silent(tmux kill-session -t \$(echo {3} | sed 's/^[sw]://;s/:.*//'))+reload($script_path --list)" \
   --bind='ctrl-/:toggle-preview' \
   --prompt='  sessions  ❯ ' \
