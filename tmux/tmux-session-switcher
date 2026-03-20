@@ -108,9 +108,17 @@ emit_spacer() {
   printf ' %s%s\n' "$US" "$US"
 }
 
+_git_lookup() {
+  local cache="$1" path="$2"
+  _gl_branch="" _gl_dirty=0 _gl_merged=0
+  while IFS=$'\x1e' read -r p b d m; do
+    [[ "$p" == "$path" ]] && { _gl_branch="$b"; _gl_dirty="${d:-0}"; _gl_merged="${m:-0}"; return; }
+  done <<< "$cache"
+}
+
 build_list() {
   local track_session="${1:-}"
-  local now sessions_raw windows_raw panes_raw
+  local now sessions_raw windows_raw panes_raw git_cache
   now=$(date +%s)
 
   # Three batched tmux calls instead of N+NM per-session/window calls
@@ -118,24 +126,47 @@ build_list() {
   windows_raw=$(tmux list-windows -a -F '#{session_name}|#{window_index}|#{window_name}|#{pane_current_command}|#{pane_current_path}|#{window_active}|#{@is_claude_running}|#{@claude_done}' 2>/dev/null)
   panes_raw=$(tmux list-panes -a -F '#{session_name}|#{window_index}|#{pane_index}|#{pane_current_command}|#{pane_current_path}|#{pane_active}|#{@is_claude_running}|#{@claude_done}' 2>/dev/null)
 
-  # Separate _default from all others, then sort each group alphabetically
-  local default_entry active_entries inactive_entries
-  default_entry=$(printf '%s\n' "$sessions_raw" | awk -F'|' '$2 == "_default"')
-  local other_entries
-  other_entries=$(printf '%s\n' "$sessions_raw" | awk -F'|' '$2 != "_default"')
+  # Build git cache (dedup + parallel)
+  git_cache=$(
+    unique_paths=$(printf '%s\n' "$windows_raw" | awk -F'|' 'NF>0 {print $5}' | sort -u)
+    while IFS= read -r path; do
+      [[ -z "$path" ]] && continue
+      (
+        branch=$(git -C "$path" branch --show-current 2>/dev/null || echo "")
+        dirty=0
+        merged=0
+        if [[ -n "$branch" ]]; then
+          [[ -n "$(git -C "$path" status --porcelain -uno 2>/dev/null | head -1)" ]] && dirty=1
+          { git -C "$path" merge-base --is-ancestor HEAD main 2>/dev/null || \
+            git -C "$path" merge-base --is-ancestor HEAD master 2>/dev/null; } && merged=1
+        fi
+        printf '%s\x1e%s\x1e%s\x1e%s\n' "$path" "$branch" "$dirty" "$merged"
+      ) &
+    done <<< "$unique_paths"
+    wait
+  )
 
+  # Separate _default from all others (bash loops, no awk)
+  local default_entry="" other_entries=""
+  while IFS='|' read -r ts name; do
+    [[ -z "$name" ]] && continue
+    if [[ "$name" == "_default" ]]; then default_entry="${ts}|${name}"
+    else other_entries+="${ts}|${name}"$'\n'; fi
+  done <<< "$sessions_raw"
+
+  local active_entries inactive_entries
   active_entries=$(
     while IFS='|' read -r ts name; do
       [[ -z "$name" ]] && continue
       local age=$(( now - ts ))
-      [[ "$(category_for_age "$age")" == "active" ]] && printf '%s|%s\n' "$ts" "$name"
+      (( age <= 172800 )) && printf '%s|%s\n' "$ts" "$name"
     done <<< "$other_entries" | sort -t'|' -k2
   )
   inactive_entries=$(
     while IFS='|' read -r ts name; do
       [[ -z "$name" ]] && continue
       local age=$(( now - ts ))
-      [[ "$(category_for_age "$age")" == "inactive" ]] && printf '%s|%s\n' "$ts" "$name"
+      (( age > 172800 )) && printf '%s|%s\n' "$ts" "$name"
     done <<< "$other_entries" | sort -t'|' -k2
   )
 
@@ -151,17 +182,19 @@ build_list() {
   local start_pos=1
   local idx=0
   local emitted_inactive_header=0
+  local -a _letters=(' ' a b c d e f g h i j k l m n o p q r s t u v w x y z)
 
   while IFS='|' read -r last_attached name; do
     if [[ "$last_attached" == "INACTIVE_BOUNDARY" ]]; then
       [[ -n "$inactive_entries" ]] || continue
       # Spacer + Inactive header
       line_num=$(( line_num + 1 ))
-      output+=$(emit_spacer)
-      output+=$'\n'
+      output+=" ${US}${US}"$'\n'
       line_num=$(( line_num + 1 ))
-      output+=$(emit_header "Inactive")
-      output+=$'\n'
+      local _header
+      printf -v _header '%b── %s ─────────────────────────────────%b%s%s%s' \
+        "${OVERLAY}" "Inactive" "${RESET}" "$US" "$US" ""
+      output+="$_header"$'\n'
       emitted_inactive_header=1
       continue
     fi
@@ -169,13 +202,15 @@ build_list() {
     idx=$(( idx + 1 ))
     local age=$(( now - last_attached ))
     local rel
-    rel=$(relative_time "$age")
+    if (( age < 60 )); then rel="${age}s"
+    elif (( age < 3600 )); then rel="$(( age / 60 ))m"
+    elif (( age < 86400 )); then rel="$(( age / 3600 ))h"
+    else rel="$(( age / 86400 ))d"; fi
 
     # Spacer before each session except: the very first, and the one directly after a header
     if [[ $idx -gt 1 && "$emitted_inactive_header" -ne 1 ]]; then
       line_num=$(( line_num + 1 ))
-      output+=$(emit_spacer)
-      output+=$'\n'
+      output+=" ${US}${US}"$'\n'
     fi
     # Clear the "just emitted header" flag after the first inactive session row
     [[ "$emitted_inactive_header" -eq 1 ]] && emitted_inactive_header=2
@@ -185,49 +220,78 @@ build_list() {
     line_num=$(( line_num + 1 ))
     [[ -n "$track_session" && "$name" == "$track_session" ]] && start_pos=$line_num
 
-    # Window rows — matched from batched data (exact session name, no regex)
+    # Window rows — matched from batched data (bash loop, no awk)
     local win_counter=0
-    local session_windows
-    session_windows=$(printf '%s\n' "$windows_raw" | \
-      awk -F'|' -v s="$name" '$1 == s { for(i=2;i<=NF;i++) printf "%s%s", $i, (i<NF?"|":"\n") }')
+    local session_windows=""
+    while IFS='|' read -r sess rest; do
+      [[ "$sess" == "$name" ]] && session_windows+="${rest}"$'\n'
+    done <<< "$windows_raw"
 
     while IFS='|' read -r win_idx win_name win_cmd win_path _active w_running w_done; do
       [[ -z "$win_idx" ]] && continue
       win_counter=$(( win_counter + 1 ))
       line_num=$(( line_num + 1 ))
-      local letter wst wicon clean_name detail dir_name branch branch_str
-      letter=$(printf "\\x$(printf '%02x' $((96 + win_counter)))")
-      wst=$(window_claude_status "$w_running" "$w_done")
-      wicon=$(window_icon "$wst" "$win_cmd")
-      clean_name=$(strip_claude_prefix "$win_name")
+      local letter wst wicon clean_name detail dir_name
+      letter="${_letters[$win_counter]}"
+
+      # Inline window_claude_status
+      if [[ "$w_running" == "1" ]]; then wst="running"
+      elif [[ -n "$w_done" ]]; then wst="done"
+      else wst="none"; fi
+
+      # Inline window_icon with printf -v
+      case "$wst" in
+        running) printf -v wicon '%b' "$ICON_CLAUDE" ;;
+        done)    printf -v wicon '%b' "${GREEN}󰚩${RESET}" ;;
+        *)
+          case "$win_cmd" in
+            zsh|bash|fish) printf -v wicon '%b' "$ICON_SHELL" ;;
+            *)             printf -v wicon '%b' "$ICON_OTHER" ;;
+          esac ;;
+      esac
+
+      # Inline strip_claude_prefix
+      clean_name="${win_name#✳ }"
       # Dedup: window name same as session and idle shell → show "shell"
       if [[ "$clean_name" == "$name" && "$win_cmd" =~ ^(zsh|bash|fish)$ ]]; then
         clean_name="shell"
       fi
 
-      # Multi-pane: check panes_raw for this session+window
-      local window_panes pane_count
-      window_panes=$(printf '%s\n' "$panes_raw" | \
-        awk -F'|' -v s="$name" -v w="$win_idx" '$1 == s && $2 == w { for(i=3;i<=NF;i++) printf "%s%s", $i, (i<NF?"|":"\n") }')
-      pane_count=$(printf '%s\n' "$window_panes" | awk 'NF>0 {n++} END {print n+0}')
+      # Multi-pane: bash loop instead of awk
+      local window_panes="" pane_count=0
+      while IFS='|' read -r sess widx rest; do
+        [[ "$sess" == "$name" && "$widx" == "$win_idx" ]] && {
+          window_panes+="${rest}"$'\n'
+          pane_count=$(( pane_count + 1 ))
+        }
+      done <<< "$panes_raw"
 
       if [[ "$pane_count" -gt 1 ]]; then
         local combined_label=""
         while IFS='|' read -r _pidx p_cmd _p_path _pactive _p_running _p_done; do
           [[ -z "$p_cmd" ]] && continue
           local plabel
-          plabel=$(pane_label_for_cmd "$p_cmd")
+          case "$p_cmd" in
+            zsh|bash|fish) plabel="shell" ;;
+            *)             plabel="$p_cmd" ;;
+          esac
           combined_label="${combined_label:+$combined_label / }$plabel"
         done <<< "$window_panes"
         clean_name="$combined_label"
       fi
 
-      dir_name=$(basename "$win_path")
-      # Git branch — shown in blue when not main/master
-      branch=$(git_branch_for_path "$win_path")
-      branch_str=""
+      # basename → parameter expansion
+      dir_name="${win_path##*/}"
+
+      # Git info from cache via bash lookup function
+      _git_lookup "$git_cache" "$win_path"
+      local branch="$_gl_branch"
+      local is_dirty_cached="$_gl_dirty"
+      local is_merged_cached="$_gl_merged"
+
+      local branch_str=""
       if [[ -n "$branch" && "$branch" != "main" && "$branch" != "master" ]]; then
-        branch_str=$(printf '%b' " ${BLUE}${branch}${RESET}")
+        printf -v branch_str '%b' " ${BLUE}${branch}${RESET}"
       fi
       # Column order: repo [branch] · status
       case "$wst" in
@@ -242,39 +306,44 @@ build_list() {
       # 2. Dirty working tree (only git repos, skip if already "done" to reduce noise)
       local is_dirty=0
       if [[ -n "$branch" && "$wst" != "done" ]]; then
-        git_is_dirty "$win_path" && { is_dirty=1; attn+=" ${PEACH}✦${RESET}"; session_attention=$(( session_attention + 1 )); }
+        if [[ "$is_dirty_cached" -eq 1 ]]; then
+          is_dirty=1
+          attn+=" ${PEACH}✦${RESET}"
+          session_attention=$(( session_attention + 1 ))
+        fi
       fi
       # 3. Stale worktree (only worktree sessions)
       if is_worktree_session "$name" && [[ -n "$branch" ]]; then
         local is_stale=0
-        if git_is_merged "$win_path"; then
+        if [[ "$is_merged_cached" -eq 1 ]]; then
           is_stale=1
-        elif [[ "$wst" == "done" && "$is_dirty" -eq 0 ]] && ! git_is_dirty "$win_path"; then
+        elif [[ "$wst" == "done" && "$is_dirty_cached" -eq 0 ]]; then
           is_stale=1
         fi
         [[ "$is_stale" -eq 1 ]] && { attn+=" ${YELLOW}󰇝${RESET}"; session_attention=$(( session_attention + 1 )); }
       fi
       # Window row: label+name \x1f detail \x1f key
-      window_rows+=$(printf ' %b %b %b%-18s%b%s%b · %s%s%b%s%b' \
+      local _row
+      printf -v _row ' %b %b %b%-18s%b%s%b · %s%s%b%s%b' \
         "${MAUVE}${idx}${letter}${RESET}" "$wicon" "${TEXT}" "$clean_name" "${RESET}" \
-        "$US" "${OVERLAY}" "$detail" "$attn" "${RESET}" "$US" "w:${name}:${win_idx}")
-      window_rows+=$'\n'
+        "$US" "${OVERLAY}" "$detail" "$attn" "${RESET}" "$US" "w:${name}:${win_idx}"
+      window_rows+="$_row"$'\n'
     done <<< "$session_windows"
 
-    # Forgotten session: inactive adds +1 to attention count
-    [[ "$(category_for_age "$age")" == "inactive" ]] && session_attention=$(( session_attention + 1 ))
+    # Forgotten session: inactive adds +1 to attention count (inline category_for_age)
+    (( age > 172800 )) && session_attention=$(( session_attention + 1 ))
 
     # Session row: label+name \x1f detail \x1f key
-    local name_field
+    local name_field _session_row
     if [[ "$session_attention" -gt 0 ]]; then
-      name_field=$(printf '%-22s %b⚠ %d%b' "$name" "${YELLOW}" "$session_attention" "${RESET}")
+      printf -v name_field '%-22s %b⚠ %d%b' "$name" "${YELLOW}" "$session_attention" "${RESET}"
     else
-      name_field=$(printf '%-22s' "$name")
+      printf -v name_field '%-22s' "$name"
     fi
-    output+=$(printf '%b   %b%s%b%s%b · %s%b%s%b' \
+    printf -v _session_row '%b   %b%s%b%s%b · %s%b%s%b' \
       "${MAUVE}${idx}${RESET}" "${TEXT}" "$name_field" "${RESET}" \
-      "$US" "${OVERLAY}" "$rel" "${RESET}" "$US" "s:${name}")
-    output+=$'\n'
+      "$US" "${OVERLAY}" "$rel" "${RESET}" "$US" "s:${name}"
+    output+="$_session_row"$'\n'
     output+="$window_rows"
 
   done <<< "$ordered"

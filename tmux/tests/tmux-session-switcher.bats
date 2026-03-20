@@ -1052,3 +1052,45 @@ setup_tmux_mock() {
   done
   [[ "$field1" != *"⚠"* ]]
 }
+
+# ── build_list: parallel git cache dedup ──────────────────────────────────────
+
+@test "build_list: dedup — same path across windows queries git once" {
+  local now
+  now=$(date +%s)
+  local tmpdir count_file
+  tmpdir=$(mktemp -d)
+  count_file=$(mktemp)
+  git init -q "$tmpdir"
+  git -C "$tmpdir" checkout -q -b feat/test 2>/dev/null || \
+    git -C "$tmpdir" symbolic-ref HEAD refs/heads/feat/test
+  export GIT_BRANCH_COUNT_FILE="$count_file"
+  git() {
+    case "$*" in
+      *"branch --show-current"*)
+        printf '1\n' >> "$GIT_BRANCH_COUNT_FILE"
+        echo "feat/test"
+        ;;
+      *"status --porcelain"*) : ;;
+      *"merge-base"*) return 1 ;;
+      *) return 1 ;;
+    esac
+  }
+  export -f git
+  tmux() {
+    case "$1 $2" in
+      "list-sessions -F") printf '%s|myproject\n' "$(( now - 60 ))" ;;
+      "list-windows -a")
+        printf 'myproject|0|win0|zsh|%s|1||\n' "$tmpdir"
+        printf 'myproject|1|win1|zsh|%s|0||\n' "$tmpdir"
+        ;;
+    esac
+  }
+  export -f tmux
+  build_list "" > /dev/null
+  local branch_calls
+  branch_calls=$(wc -l < "$count_file" | tr -d ' ')
+  rm -f "$count_file"
+  rm -rf "$tmpdir"
+  [ "$branch_calls" -eq 1 ]
+}

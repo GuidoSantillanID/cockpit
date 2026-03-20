@@ -233,6 +233,8 @@ bind w display-popup -w 85% -h 80% -E "tmux-session-switcher"
 - `Enter` — switch to selected session (or specific window if a window row is selected)
 - `ctrl-d` — kill the selected session (then reloads the list)
 
+**Performance:** Renders in a single pass — git branch/dirty/stale info is collected upfront via parallel background jobs, then the completed list is piped to fzf. Git lookups are deduplicated by path. Typical render time ~100–150ms.
+
 **Preview pane** (right side): shows session name, path, window list with icons and details, plus attached/detached status, window count, and session age.
 
 ---
