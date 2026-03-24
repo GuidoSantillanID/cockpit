@@ -1,10 +1,11 @@
 ---
 name: commit
-description: "ONLY invoke when user explicitly runs /commit. Do NOT trigger on words like 'commit', 'save changes', 'create a commit', etc."
+description: "Quick fire-and-forget commit: auto-stage, generate conventional commit message, commit."
 user-invocable: true
+disable-model-invocation: true
 metadata:
   author: guido
-  version: "1.0.0"
+  version: "1.1.0"
 ---
 
 # /commit

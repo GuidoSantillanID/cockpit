@@ -46,8 +46,7 @@ When `.wt-meta` is present in the repo root, this is a worktree managed by the `
 - `wt finish` — rebase onto base branch, fast-forward, remove worktree + branch
 - `wt drop` — abandon worktree without merging, remove worktree + branch
 - `wt new` — create new worktree and cd into it
-- `wt sync` — rebase onto latest base branch from origin
-- `wt update` — merge local base branch into worktree; LLM resolves conflicts autonomously where clear, asks user when product/business knowledge is needed. You MAY run this via Bash tool.
+- `wt sync` — merge local base branch into worktree; LLM resolves conflicts autonomously where clear, asks user when product/business knowledge is needed. You MAY run this via Bash tool.
 - `wt list` — list active worktrees
 - `wt doctor` — check worktree health
 
