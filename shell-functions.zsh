@@ -34,10 +34,10 @@ alias ccd="claude --dangerously-skip-permissions"
 function md() { glow "$@"; }
 
 # wt — thin wrapper that enables `cd` into/out of worktrees.
-# wt new/finish/drop print the target path on stdout; this wrapper
+# wt new/finish/abandon/go print the target path on stdout; this wrapper
 # captures it and calls cd. All other wt commands pass through unchanged.
 function wt() {
-  if [[ "$1" == "new" || "$1" == "finish" || "$1" == "drop" ]]; then
+  if [[ "$1" == "new" || "$1" == "finish" || "$1" == "abandon" || "$1" == "go" ]]; then
     local dir
     dir=$(command wt "$@") && [[ -n "$dir" ]] && cd "$dir"
   else

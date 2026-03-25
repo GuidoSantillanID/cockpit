@@ -1,5 +1,9 @@
 # cockpit
 
+> **STOP. Before editing any file in this repo: is it a synced file?**
+> Check the table below. If yes — **do not edit it here**. Edit the live file on the local machine instead. `sync.sh` overwrites repo copies — edits here will be lost and will confuse the source of truth.
+> This rule has been violated before. It must not happen again.
+
 Backup of personal Ghostty + tmux + Claude Code workflow configs. **Not the source of truth** — files live on the local machine; this repo is a copy.
 
 ## File layout
