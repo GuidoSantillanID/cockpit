@@ -87,8 +87,8 @@ git_is_dirty() {
 }
 
 git_is_merged() {
-  git -C "$1" merge-base --is-ancestor HEAD main 2>/dev/null || \
-    git -C "$1" merge-base --is-ancestor HEAD master 2>/dev/null
+  git -C "$1" merge-base --is-ancestor HEAD origin/main 2>/dev/null || \
+    git -C "$1" merge-base --is-ancestor HEAD origin/master 2>/dev/null
 }
 
 # Emit a dimmed category header line (3 US-delimited fields, field 3 empty = non-selectable)
@@ -153,8 +153,8 @@ build_list() {
           fi
           if [[ -n "$branch" ]]; then
             [[ "$git_out" == *$'\n'* ]] && dirty=1
-            { git -C "$path" merge-base --is-ancestor HEAD main 2>/dev/null || \
-              git -C "$path" merge-base --is-ancestor HEAD master 2>/dev/null; } && merged=1
+            { git -C "$path" merge-base --is-ancestor HEAD origin/main 2>/dev/null || \
+              git -C "$path" merge-base --is-ancestor HEAD origin/master 2>/dev/null; } && merged=1
           fi
           printf '%s\x1e%s\x1e%s\x1e%s\n' "$path" "$branch" "$dirty" "$merged"
         ) &
