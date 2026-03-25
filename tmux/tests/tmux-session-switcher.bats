@@ -520,7 +520,7 @@ setup_tmux_mock() {
 
 # ── multi-pane windows in main list ──────────────────────────────────────────
 
-@test "build_list: multi-pane idle window shows combined pane label with slash separator" {
+@test "build_list: multi-pane idle window shows window name with dot-count" {
   local now
   now=$(date +%s)
   tmux() {
@@ -541,18 +541,18 @@ setup_tmux_mock() {
   export -f tmux
   local US=$'\x1f'
   run build_list ""
-  local field1=""
+  local field1="" field2=""
   for line in "${lines[@]}"; do
     local key
     key=$(printf '%s' "$line" | cut -d"$US" -f3)
     if [[ "$key" == "w:myproject:0" ]]; then
       field1=$(printf '%s' "$line" | cut -d"$US" -f1)
+      field2=$(printf '%s' "$line" | cut -d"$US" -f2)
       break
     fi
   done
-  [[ "$field1" == *" / "* ]]
-  [[ "$field1" == *"node"* ]]
-  [[ "$field1" == *"shell"* ]]
+  [[ "$field2" == *"󰿦 2"* ]]
+  [[ "$field1" != *" / "* ]]
 }
 
 @test "build_list: multi-pane window with Claude running uses window name not pane commands" {
@@ -576,19 +576,95 @@ setup_tmux_mock() {
   export -f tmux
   local US=$'\x1f'
   run build_list ""
-  local field1=""
+  local field1="" field2=""
   for line in "${lines[@]}"; do
     local key
     key=$(printf '%s' "$line" | cut -d"$US" -f3)
     if [[ "$key" == "w:myproject:0" ]]; then
       field1=$(printf '%s' "$line" | cut -d"$US" -f1)
+      field2=$(printf '%s' "$line" | cut -d"$US" -f2)
       break
     fi
   done
-  # Window was renamed to "󰚩 main" — should show "main", not "2.1.83 / shell"
+  # Name column clean; pane indicator in detail column (field 2)
   [[ "$field1" == *"main"* ]]
+  [[ "$field2" == *"󰿦 2"* ]]
   [[ "$field1" != *"2.1.83"* ]]
   [[ "$field1" != *" / "* ]]
+}
+
+@test "build_list: multi-pane idle window shows dot-count suffix" {
+  local now
+  now=$(date +%s)
+  tmux() {
+    case "$1 $2" in
+      "list-sessions -F")
+        printf '%s|myproject\n' "$(( now - 60 ))"
+        ;;
+      "list-windows -a")
+        # window name same as session → dedup to "shell"
+        printf 'myproject|0|myproject|zsh|/home/user/myproject|1||\n'
+        ;;
+      "list-panes -a")
+        printf 'myproject|0|0|zsh|/home/user/myproject|1||\n'
+        printf 'myproject|0|1|zsh|/home/user/myproject|0||\n'
+        ;;
+    esac
+  }
+  export -f tmux
+  local US=$'\x1f'
+  run build_list ""
+  local field1="" field2=""
+  for line in "${lines[@]}"; do
+    local key
+    key=$(printf '%s' "$line" | cut -d"$US" -f3)
+    if [[ "$key" == "w:myproject:0" ]]; then
+      field1=$(printf '%s' "$line" | cut -d"$US" -f1)
+      field2=$(printf '%s' "$line" | cut -d"$US" -f2)
+      break
+    fi
+  done
+  # Name column clean; pane indicator in detail column (field 2)
+  [[ "$field1" == *"shell"* ]]
+  [[ "$field2" == *"󰿦 2"* ]]
+  [[ "$field1" != *"shell 󰿦"* ]]
+  [[ "$field1" != *" / "* ]]
+}
+
+@test "build_list: pane indicator is separate from window name" {
+  local now
+  now=$(date +%s)
+  tmux() {
+    case "$1 $2" in
+      "list-sessions -F")
+        printf '%s|myproject\n' "$(( now - 60 ))"
+        ;;
+      "list-windows -a")
+        printf 'myproject|0|󰚩 main|2.1.83|/home/user/myproject|1|1|\n'
+        ;;
+      "list-panes -a")
+        printf 'myproject|0|0|2.1.83|/home/user/myproject|1|1|\n'
+        printf 'myproject|0|1|zsh|/home/user/myproject|0||\n'
+        ;;
+    esac
+  }
+  export -f tmux
+  local US=$'\x1f'
+  run build_list ""
+  local field1="" field2=""
+  for line in "${lines[@]}"; do
+    local key
+    key=$(printf '%s' "$line" | cut -d"$US" -f3)
+    if [[ "$key" == "w:myproject:0" ]]; then
+      field1=$(printf '%s' "$line" | cut -d"$US" -f1)
+      field2=$(printf '%s' "$line" | cut -d"$US" -f2)
+      break
+    fi
+  done
+  # Name column (field 1) stays clean; pane indicator in detail column (field 2)
+  [[ "$field1" == *"main"* ]]
+  [[ "$field2" == *"󰿦 2"* ]]
+  [[ "$field1" != *"󰿦"* ]]
 }
 
 @test "build_list: single-pane window does not show slash separator" {
@@ -776,18 +852,20 @@ setup_tmux_mock() {
   setup_tmux_mock
   local US=$'\x1f'
   run build_list ""
-  local field1=""
+  local field1="" field2=""
   for line in "${lines[@]}"; do
     local key
     key=$(printf '%s' "$line" | cut -d"$US" -f3)
     if [[ "$key" == "w:sessionA:0" ]]; then
       field1=$(printf '%s' "$line" | cut -d"$US" -f1)
+      field2=$(printf '%s' "$line" | cut -d"$US" -f2)
       break
     fi
   done
-  [[ "$field1" == *"/"* ]]
-  [[ "$field1" == *"claude"* ]]
-  [[ "$field1" == *"shell"* ]]
+  # sessionA has 2 panes — indicator in detail column, name column clean
+  [[ "$field2" == *"󰿦 2"* ]]
+  [[ "$field1" != *" / "* ]]
+  [[ "$field1" != *"󰿦"* ]]
 }
 
 # ── preview_session: error handling ──────────────────────────────────────────

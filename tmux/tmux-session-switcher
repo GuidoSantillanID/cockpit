@@ -15,8 +15,8 @@ RESET='\033[0m'
 
 # Nerd Font icons by window type
 ICON_CLAUDE="${PEACH}󰚩${RESET}"   # nf-md-creation (sparkle) — claude running
-ICON_SHELL="${OVERLAY}${RESET}"  # nf-dev-terminal — shell window
-ICON_OTHER="${OVERLAY}${RESET}"  # nf-cod-gear — anything else
+ICON_SHELL="${OVERLAY}󰆍${RESET}"  # nf-md-console — shell window
+ICON_OTHER="${OVERLAY}󰒍${RESET}"  # nf-md-cog — anything else
 
 git_branch_for_path() {
   git -C "$1" branch --show-current 2>/dev/null || true
@@ -273,28 +273,15 @@ build_list() {
         clean_name="shell"
       fi
 
-      # Multi-pane: bash loop instead of awk
-      local window_panes="" pane_count=0
+      # Multi-pane: count panes; indicator goes in the detail column (field 2)
+      # so field 1 stays fixed-width and · aligns correctly across all rows.
+      local pane_count=0
       while IFS='|' read -r sess widx rest; do
-        [[ "$sess" == "$name" && "$widx" == "$win_idx" ]] && {
-          window_panes+="${rest}"$'\n'
-          pane_count=$(( pane_count + 1 ))
-        }
+        [[ "$sess" == "$name" && "$widx" == "$win_idx" ]] && pane_count=$(( pane_count + 1 ))
       done <<< "$panes_raw"
 
-      if [[ "$pane_count" -gt 1 && "$wst" == "none" ]]; then
-        local combined_label=""
-        while IFS='|' read -r _pidx p_cmd _p_path _pactive _p_running _p_done; do
-          [[ -z "$p_cmd" ]] && continue
-          local plabel
-          case "$p_cmd" in
-            zsh|bash|fish) plabel="shell" ;;
-            *)             plabel="$p_cmd" ;;
-          esac
-          combined_label="${combined_label:+$combined_label / }$plabel"
-        done <<< "$window_panes"
-        clean_name="$combined_label"
-      fi
+      local pane_str=""
+      [[ "$pane_count" -gt 1 ]] && pane_str=" ${OVERLAY}󰿦 ${pane_count}${RESET}"
 
       # basename → parameter expansion
       dir_name="${win_path##*/}"
@@ -340,9 +327,9 @@ build_list() {
       fi
       # Window row: label+name \x1f detail \x1f key
       local _row
-      printf -v _row ' %b %b %b%-26s%b%s%b · %s%b%b%s%b' \
+      printf -v _row ' %b %b %b%-26s%b%s%b · %s%b%b%b%s%b' \
         "${MAUVE}${idx}${letter}${RESET}" "$wicon" "${TEXT}" "$clean_name" "${RESET}" \
-        "$US" "${OVERLAY}" "$detail" "$attn" "${RESET}" "$US" "w:${name}:${win_idx}"
+        "$US" "${OVERLAY}" "$detail" "$attn" "$pane_str" "${RESET}" "$US" "w:${name}:${win_idx}"
       window_rows+="$_row"$'\n'
     done <<< "$session_windows"
 
