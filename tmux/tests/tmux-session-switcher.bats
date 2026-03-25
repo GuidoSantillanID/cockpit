@@ -258,6 +258,33 @@ setup_tmux_mock() {
   [[ "${lines[0]}" == POS:* ]]
 }
 
+@test "fzf invocation: pos() fires in load binding after reload-sync, not in start binding" {
+  # pos() in start: fires before reload-sync resets the list, so cursor reverts to 1.
+  # It must be chained after reload-sync in the load: binding instead.
+  ! grep -q 'start:pos(' "$SCRIPT"
+  grep -qE 'load:reload-sync[^"]*\+pos\(' "$SCRIPT"
+}
+
+@test "fzf invocation: load binding contains unbind(load) to prevent infinite reload" {
+  # Without unbind(load), every reload (e.g. ctrl-d) would re-trigger the load binding.
+  grep -qE 'load:reload-sync[^"]*\+unbind\(load\)' "$SCRIPT"
+}
+
+@test "build_list: no POS line emitted when called without session arg (--list reload path)" {
+  setup_tmux_mock
+  run build_list ""
+  [[ "${lines[0]}" != POS:* ]]
+}
+
+@test "build_list: fast (skip_git) and full load produce same line count" {
+  # start_pos is computed from the fast list; it must index correctly into the full list.
+  setup_tmux_mock
+  local fast_count full_count
+  fast_count=$(build_list "sessionA" "1" | tail -n +2 | wc -l | tr -d ' ')
+  full_count=$(build_list "sessionA" | tail -n +2 | wc -l | tr -d ' ')
+  [ "$fast_count" -eq "$full_count" ]
+}
+
 @test "build_list: POS points to sessionA line" {
   setup_tmux_mock
   local US=$'\x1f'
