@@ -311,7 +311,7 @@ setup_tmux_mock() {
 
 # ── column order: repo first, status last (#5) ───────────────────────────────
 
-@test "build_list: running window shows dirname before 'running'" {
+@test "build_list: running window shows dirname in detail (no 'running' label)" {
   local now
   now=$(date +%s)
   tmux() {
@@ -327,7 +327,6 @@ setup_tmux_mock() {
   export -f tmux
   local US=$'\x1f'
   run build_list ""
-  # Find the window row (field 3 = w:myproject:0) and check field 2
   local detail=""
   for line in "${lines[@]}"; do
     local key
@@ -337,15 +336,9 @@ setup_tmux_mock() {
       break
     fi
   done
-  # detail should be "· myproject · running", NOT "· running · myproject"
-  [[ "$detail" == *"myproject"*"running"* ]]
-  [[ "$detail" != *"running"*"myproject"* ]] || {
-    # Extra check: "running" must come AFTER "myproject" in the string
-    local pos_repo pos_run
-    pos_repo=$(printf '%s' "$detail" | awk '{print index($0,"myproject")}')
-    pos_run=$(printf '%s' "$detail" | awk '{print index($0,"running")}')
-    [ "$pos_repo" -lt "$pos_run" ]
-  }
+  # icon already signals running — no need for the text label
+  [[ "$detail" == *"myproject"* ]]
+  [[ "$detail" != *"running"* ]]
 }
 
 # ── window name dedup (#7) ───────────────────────────────────────────────────
@@ -1302,4 +1295,92 @@ setup_tmux_mock() {
   rm -f "$count_file"
   rm -rf "$tmpdir"
   [ "$branch_calls" -eq 1 ]
+}
+
+# ── robot-icon prefix stripping ───────────────────────────────────────────────
+
+@test "build_list: strips robot-icon prefix from window name" {
+  local now
+  now=$(date +%s)
+  tmux() {
+    case "$1 $2" in
+      "list-sessions -F") printf '%s|myproject\n' "$(( now - 60 ))" ;;
+      "list-windows -a")  printf 'myproject|0|󰚩 main|zsh|/home/user/myproject|1|1|\n' ;;
+    esac
+  }
+  export -f tmux
+  local US=$'\x1f'
+  run build_list "" "1"
+  local field1=""
+  for line in "${lines[@]}"; do
+    local key
+    key=$(printf '%s' "$line" | cut -d"$US" -f3)
+    if [[ "$key" == "w:myproject:0" ]]; then
+      field1=$(printf '%s' "$line" | cut -d"$US" -f1)
+      break
+    fi
+  done
+  # clean_name must be "main", not "󰚩 main" (which would duplicate the wicon)
+  [[ "$field1" != *"󰚩 main"* ]]
+  [[ "$field1" == *"main"* ]]
+}
+
+# ── branch suppression when redundant with dir_name ──────────────────────────
+
+@test "build_list: does not show branch when it ends with slash-dir_name" {
+  local now
+  now=$(date +%s)
+  local tmpdir fake_path
+  tmpdir=$(mktemp -d)
+  fake_path="$tmpdir/test-test-test"
+  mkdir -p "$fake_path"
+  git init -q "$fake_path"
+  git -C "$fake_path" checkout -q -b wt/test-test-test 2>/dev/null || \
+    git -C "$fake_path" symbolic-ref HEAD refs/heads/wt/test-test-test
+  tmux() {
+    case "$1 $2" in
+      "list-sessions -F") printf '%s|myproject\n' "$(( now - 60 ))" ;;
+      "list-windows -a")  printf 'myproject|0|dev|zsh|%s|1||\n' "$fake_path" ;;
+    esac
+  }
+  export -f tmux
+  local US=$'\x1f'
+  run build_list ""
+  rm -rf "$tmpdir"
+  local detail=""
+  for line in "${lines[@]}"; do
+    local key
+    key=$(printf '%s' "$line" | cut -d"$US" -f3)
+    if [[ "$key" == w:myproject:* ]]; then
+      detail=$(printf '%s' "$line" | cut -d"$US" -f2)
+      break
+    fi
+  done
+  # "wt/test-test-test" is redundant — dir is already "test-test-test"
+  [[ "$detail" != *"wt/test-test-test"* ]]
+}
+
+@test "build_list: done window does not show 'done' label in detail" {
+  local now
+  now=$(date +%s)
+  tmux() {
+    case "$1 $2" in
+      "list-sessions -F") printf '%s|myapp\n' "$(( now - 60 ))" ;;
+      "list-windows -a")  printf 'myapp|0|dev|zsh|/tmp|1||done\n' ;;
+    esac
+  }
+  export -f tmux
+  local US=$'\x1f'
+  run build_list "" "1"
+  local detail=""
+  for line in "${lines[@]}"; do
+    local key
+    key=$(printf '%s' "$line" | cut -d"$US" -f3)
+    if [[ "$key" == "w:myapp:0" ]]; then
+      detail=$(printf '%s' "$line" | cut -d"$US" -f2)
+      break
+    fi
+  done
+  # green ● badge already signals done — no text label needed
+  [[ "$detail" != *"done"* ]]
 }
