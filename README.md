@@ -37,6 +37,10 @@ See [SETUP.md](SETUP.md) for the full workflow walkthrough and how the pieces co
 | `claude/skills/update-docs/SKILL.md` | `~/.claude/skills/update-docs/SKILL.md` |
 | `claude/skills/update-pr-description/SKILL.md` | `~/.claude/skills/update-pr-description/SKILL.md` |
 
+## Pro Tips
+
+Reusable workflows and patterns from real problems. See [pro-tips/](pro-tips/README.md).
+
 ## Syncing
 
 ```bash

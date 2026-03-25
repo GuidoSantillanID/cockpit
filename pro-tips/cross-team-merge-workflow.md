@@ -1,5 +1,7 @@
 # Cross-Team Merge Workflow (Monorepo)
 
+> **TL;DR:** Each engineer creates an integration branch, merges main, resolves only their component, pushes. One person does the final merge and runs `git checkout origin/<integration-branch> -- components/<name>/` per component to apply all resolutions instantly. No coordination calls, no patches, fully async.
+
 ## The Problem
 
 In a monorepo, a long-lived feature branch diverges from main. Merging produces conflicts across multiple components (web, api, core, sdk) owned by different engineers in different timezones. Git merge is atomic — all conflicts must be resolved in one commit, on one machine.

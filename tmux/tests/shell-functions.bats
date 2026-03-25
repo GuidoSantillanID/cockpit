@@ -39,11 +39,11 @@ setup_tmux_mock() {
   export -f tmux
 }
 
-@test "claude: renames window to '✳ claude' inside tmux" {
+@test "claude: renames window to '󰚩 claude' inside tmux" {
   setup_tmux_mock
   export TMUX="fake-tmux-session"
   claude --version
-  grep -q "rename-window ✳ claude" "$CALL_LOG"
+  grep -q "rename-window 󰚩 claude" "$CALL_LOG"
 }
 
 @test "claude: sets @is_claude_running when starting" {
@@ -53,11 +53,11 @@ setup_tmux_mock() {
   grep -q "set-option -w @is_claude_running 1" "$CALL_LOG"
 }
 
-@test "claude: sets @claude_done on exit" {
+@test "claude: does NOT set @claude_done on exit" {
   setup_tmux_mock
   export TMUX="fake-tmux-session"
   claude --version
-  grep -q "set-option -w @claude_done 1" "$CALL_LOG"
+  ! grep -q "set-option -w @claude_done 1" "$CALL_LOG"
 }
 
 @test "claude: unsets @is_claude_running on exit" {
@@ -67,11 +67,11 @@ setup_tmux_mock() {
   grep -q "set-option -wu @is_claude_running" "$CALL_LOG"
 }
 
-@test "claude: restores original window name on exit" {
+@test "claude: re-enables automatic-rename on exit" {
   setup_tmux_mock
   export TMUX="fake-tmux-session"
   claude --version
-  grep -q "rename-window original-window" "$CALL_LOG"
+  grep -q "set-option -wu automatic-rename" "$CALL_LOG"
 }
 
 @test "claude: falls through to command claude outside tmux" {

@@ -33,7 +33,7 @@ setup() {
 # ── strip_claude_prefix ───────────────────────────────────────────────────────
 
 @test "strip_claude_prefix: strips prefix" {
-  run strip_claude_prefix "✳ claude"
+  run strip_claude_prefix "󰚩 claude"
   [ "$output" = "claude" ]
 }
 

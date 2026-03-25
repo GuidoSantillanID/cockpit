@@ -12,14 +12,11 @@
 # Without tmux, falls through to the normal claude command.
 function claude() {
   if [[ -n "$TMUX" ]]; then
-    local old_name
-    old_name=$(tmux display-message -p '#W')
-    tmux rename-window "✳ claude"
+    tmux rename-window "󰚩 claude"
     tmux set-option -w @is_claude_running 1
     command claude "$@"
-    tmux set-option -w @claude_done 1
     tmux set-option -wu @is_claude_running
-    tmux rename-window "$old_name"
+    tmux set-option -wu automatic-rename
   else
     command claude "$@"
   fi
