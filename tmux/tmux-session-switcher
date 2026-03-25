@@ -282,7 +282,7 @@ build_list() {
         }
       done <<< "$panes_raw"
 
-      if [[ "$pane_count" -gt 1 ]]; then
+      if [[ "$pane_count" -gt 1 && "$wst" == "none" ]]; then
         local combined_label=""
         while IFS='|' read -r _pidx p_cmd _p_path _pactive _p_running _p_done; do
           [[ -z "$p_cmd" ]] && continue

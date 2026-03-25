@@ -520,7 +520,7 @@ setup_tmux_mock() {
 
 # ── multi-pane windows in main list ──────────────────────────────────────────
 
-@test "build_list: multi-pane window shows combined label with slash separator" {
+@test "build_list: multi-pane idle window shows combined pane label with slash separator" {
   local now
   now=$(date +%s)
   tmux() {
@@ -529,10 +529,11 @@ setup_tmux_mock() {
         printf '%s|myproject\n' "$(( now - 60 ))"
         ;;
       "list-windows -a")
-        printf 'myproject|0|dev|claude|/home/user/myproject|1|1|\n'
+        # No @is_claude_running — idle multi-pane window
+        printf 'myproject|0|dev|node|/home/user/myproject|1||\n'
         ;;
       "list-panes -a")
-        printf 'myproject|0|0|claude|/home/user/myproject|1|1|\n'
+        printf 'myproject|0|0|node|/home/user/myproject|1||\n'
         printf 'myproject|0|1|zsh|/home/user/myproject|0||\n'
         ;;
     esac
@@ -549,9 +550,45 @@ setup_tmux_mock() {
       break
     fi
   done
-  [[ "$field1" == *"/"* ]]
-  [[ "$field1" == *"claude"* ]]
+  [[ "$field1" == *" / "* ]]
+  [[ "$field1" == *"node"* ]]
   [[ "$field1" == *"shell"* ]]
+}
+
+@test "build_list: multi-pane window with Claude running uses window name not pane commands" {
+  local now
+  now=$(date +%s)
+  tmux() {
+    case "$1 $2" in
+      "list-sessions -F")
+        printf '%s|myproject\n' "$(( now - 60 ))"
+        ;;
+      "list-windows -a")
+        # Window renamed to "󰚩 main" by claude() wrapper, @is_claude_running=1
+        printf 'myproject|0|󰚩 main|2.1.83|/home/user/myproject|1|1|\n'
+        ;;
+      "list-panes -a")
+        printf 'myproject|0|0|2.1.83|/home/user/myproject|1|1|\n'
+        printf 'myproject|0|1|zsh|/home/user/myproject|0||\n'
+        ;;
+    esac
+  }
+  export -f tmux
+  local US=$'\x1f'
+  run build_list ""
+  local field1=""
+  for line in "${lines[@]}"; do
+    local key
+    key=$(printf '%s' "$line" | cut -d"$US" -f3)
+    if [[ "$key" == "w:myproject:0" ]]; then
+      field1=$(printf '%s' "$line" | cut -d"$US" -f1)
+      break
+    fi
+  done
+  # Window was renamed to "󰚩 main" — should show "main", not "2.1.83 / shell"
+  [[ "$field1" == *"main"* ]]
+  [[ "$field1" != *"2.1.83"* ]]
+  [[ "$field1" != *" / "* ]]
 }
 
 @test "build_list: single-pane window does not show slash separator" {
