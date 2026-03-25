@@ -911,6 +911,31 @@ setup_tmux_mock() {
   [[ "$detail" == *"●"* ]]
 }
 
+@test "build_list: attention badge colors use actual ESC bytes, not literal backslash-033" {
+  local now
+  now=$(date +%s)
+  tmux() {
+    case "$1 $2" in
+      "list-sessions -F") printf '%s|myapp\n' "$(( now - 60 ))" ;;
+      "list-windows -a")  printf 'myapp|0|dev|zsh|/tmp|1||done\n' ;;
+    esac
+  }
+  export -f tmux
+  local US=$'\x1f'
+  run build_list ""
+  local detail=""
+  for line in "${lines[@]}"; do
+    local key
+    key=$(printf '%s' "$line" | cut -d"$US" -f3)
+    if [[ "$key" == "w:myapp:0" ]]; then
+      detail=$(printf '%s' "$line" | cut -d"$US" -f2)
+      break
+    fi
+  done
+  # Must NOT contain literal "\033" — means ANSI escape not expanded
+  [[ "$detail" != *'\033'* ]]
+}
+
 @test "build_list: dirty tree shows peach diamond badge" {
   local now
   now=$(date +%s)

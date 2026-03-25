@@ -346,7 +346,7 @@ build_list() {
       fi
       # Window row: label+name \x1f detail \x1f key
       local _row
-      printf -v _row ' %b %b %b%-18s%b%s%b · %s%s%b%s%b' \
+      printf -v _row ' %b %b %b%-18s%b%s%b · %s%b%b%s%b' \
         "${MAUVE}${idx}${letter}${RESET}" "$wicon" "${TEXT}" "$clean_name" "${RESET}" \
         "$US" "${OVERLAY}" "$detail" "$attn" "${RESET}" "$US" "w:${name}:${win_idx}"
       window_rows+="$_row"$'\n'
