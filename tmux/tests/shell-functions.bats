@@ -32,18 +32,22 @@ teardown() {
 setup_tmux_mock() {
   tmux() {
     echo "tmux $*" >> "$CALL_LOG"
-    case "$*" in
-      "display-message -p #W") echo "original-window" ;;
-    esac
   }
   export -f tmux
 }
 
-@test "claude: renames window to '󰚩 claude' inside tmux" {
+@test "claude: does NOT rename the window" {
   setup_tmux_mock
   export TMUX="fake-tmux-session"
   claude --version
-  grep -q "rename-window 󰚩 claude" "$CALL_LOG"
+  ! grep -q "rename-window" "$CALL_LOG"
+}
+
+@test "claude: re-enables automatic-rename on start" {
+  setup_tmux_mock
+  export TMUX="fake-tmux-session"
+  claude --version
+  grep -q "set-option -wu automatic-rename" "$CALL_LOG"
 }
 
 @test "claude: sets @is_claude_running when starting" {
@@ -67,12 +71,6 @@ setup_tmux_mock() {
   grep -q "set-option -wu @is_claude_running" "$CALL_LOG"
 }
 
-@test "claude: re-enables automatic-rename on exit" {
-  setup_tmux_mock
-  export TMUX="fake-tmux-session"
-  claude --version
-  grep -q "set-option -wu automatic-rename" "$CALL_LOG"
-}
 
 @test "claude: falls through to command claude outside tmux" {
   tmux() { echo "tmux $*" >> "$CALL_LOG"; }

@@ -30,18 +30,6 @@ setup() {
   [ "$output" = "2d" ]
 }
 
-# ── strip_claude_prefix ───────────────────────────────────────────────────────
-
-@test "strip_claude_prefix: strips prefix" {
-  run strip_claude_prefix "󰚩 claude"
-  [ "$output" = "claude" ]
-}
-
-@test "strip_claude_prefix: no-op when no prefix" {
-  run strip_claude_prefix "dev"
-  [ "$output" = "dev" ]
-}
-
 # ── window_claude_status ──────────────────────────────────────────────────────
 
 @test "window_claude_status: running when running flag is 1" {

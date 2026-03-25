@@ -49,11 +49,6 @@ relative_time() {
   fi
 }
 
-# Strip 󰚩 prefix from window names set by the claude() shell function
-strip_claude_prefix() {
-  echo "${1#󰚩 }"
-}
-
 # Human-readable label for a pane command: shells → "shell", others pass through
 pane_label_for_cmd() {
   local cmd=$1
@@ -272,8 +267,7 @@ build_list() {
           esac ;;
       esac
 
-      # Inline strip_claude_prefix
-      clean_name="${win_name#󰚩 }"
+      clean_name="$win_name"
       # Dedup: window name same as session and idle shell → show "shell"
       if [[ "$clean_name" == "$name" && "$win_cmd" =~ ^(zsh|bash|fish)$ ]]; then
         clean_name="shell"
@@ -436,7 +430,7 @@ preview_session() {
     local wst wicon clean_name detail dir_name
     wst=$(window_claude_status "$w_running" "$w_done")
     wicon=$(window_icon "$wst" "$win_cmd")
-    clean_name=$(strip_claude_prefix "$win_name")
+    clean_name="$win_name"
     dir_name=$(basename "$win_path")
     case "$wst" in
       running) detail="$dir_name · running" ;;
