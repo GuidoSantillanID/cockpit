@@ -300,18 +300,17 @@ build_list() {
       if [[ -n "$branch_str" && ("$branch" == "$dir_name" || "$branch" == *"/$dir_name") ]]; then
         branch_str=""
       fi
-      # State (running/done) is conveyed by icon and badge — no text label needed
       detail="${dir_name}${branch_str}"
       # Attention badges
       local attn=""
       # 1. Claude done badge
-      [[ "$wst" == "done" ]] && { attn+=" ${GREEN}●${RESET}"; session_attention=$(( session_attention + 1 )); }
+      [[ "$wst" == "done" ]] && { attn+=" ${GREEN}● done${RESET}"; session_attention=$(( session_attention + 1 )); }
       # 2. Dirty working tree (only git repos, skip if already "done" to reduce noise)
       local is_dirty=0
       if [[ -n "$branch" && "$wst" != "done" ]]; then
         if [[ "$is_dirty_cached" -eq 1 ]]; then
           is_dirty=1
-          attn+=" ${PEACH}✦${RESET}"
+          attn+=" ${PEACH}✦ dirty${RESET}"
           session_attention=$(( session_attention + 1 ))
         fi
       fi
@@ -323,7 +322,7 @@ build_list() {
         elif [[ "$wst" == "done" && "$is_dirty_cached" -eq 0 ]]; then
           is_stale=1
         fi
-        [[ "$is_stale" -eq 1 ]] && { attn+=" ${YELLOW}󰇝${RESET}"; session_attention=$(( session_attention + 1 )); }
+        [[ "$is_stale" -eq 1 ]] && { attn+=" ${YELLOW}󰇝 stale${RESET}"; session_attention=$(( session_attention + 1 )); }
       fi
       # Window row: label+name \x1f detail \x1f key
       local _row
@@ -339,7 +338,7 @@ build_list() {
     # Session row: label+name \x1f detail \x1f key
     local name_field _session_row
     if [[ "$session_attention" -gt 0 ]]; then
-      printf -v name_field '%-22s %b⚠ %d%b' "$name" "${YELLOW}" "$session_attention" "${RESET}"
+      printf -v name_field '%-22s %b⚠%b' "$name" "${YELLOW}" "${RESET}"
     else
       printf -v name_field '%-22s' "$name"
     fi
