@@ -848,7 +848,7 @@ setup_tmux_mock() {
 
 # ── build_list: setup_tmux_mock multi-pane data ───────────────────────────────
 
-@test "build_list: multi-pane data in mock produces combined label for sessionA window" {
+@test "build_list: multi-pane data in mock produces pane-count indicator in detail for sessionA window" {
   setup_tmux_mock
   local US=$'\x1f'
   run build_list ""
@@ -1061,7 +1061,7 @@ setup_tmux_mock() {
       break
     fi
   done
-  [[ "$detail" == *"✦"* ]]
+  [[ "$detail" == *"✦ dirty"* ]]
 }
 
 @test "build_list: worktree session with done+clean window shows stale badge" {
@@ -1092,7 +1092,7 @@ setup_tmux_mock() {
       break
     fi
   done
-  [[ "$detail" == *"󰇝"* ]]
+  [[ "$detail" == *"󰇝 stale"* ]]
 }
 
 @test "build_list: non-worktree session does not show stale badge" {
@@ -1475,7 +1475,7 @@ setup_tmux_mock() {
   [[ "$detail" != *"wt/test-test-test"* ]]
 }
 
-@test "build_list: done window does not show 'done' label in detail" {
+@test "build_list: done window shows 'done' label in detail" {
   local now
   now=$(date +%s)
   tmux() {
@@ -1496,6 +1496,5 @@ setup_tmux_mock() {
       break
     fi
   done
-  # green ● badge already signals done — no text label needed
-  [[ "$detail" != *"done"* ]]
+  [[ "$detail" == *"● done"* ]]
 }
