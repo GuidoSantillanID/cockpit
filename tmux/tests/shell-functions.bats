@@ -36,14 +36,22 @@ setup_tmux_mock() {
   export -f tmux
 }
 
-@test "claude: does NOT rename the window" {
+@test "claude: renames window with robot icon on start" {
   setup_tmux_mock
   export TMUX="fake-tmux-session"
   claude --version
-  ! grep -q "rename-window" "$CALL_LOG"
+  grep -q "rename-window 󰚩 " "$CALL_LOG"
 }
 
-@test "claude: re-enables automatic-rename on start" {
+@test "claude: does NOT rename window on exit" {
+  setup_tmux_mock
+  export TMUX="fake-tmux-session"
+  claude --version
+  # Only one rename-window call (entry), none on exit
+  [ "$(grep -c "rename-window" "$CALL_LOG")" -eq 1 ]
+}
+
+@test "claude: re-enables automatic-rename on exit" {
   setup_tmux_mock
   export TMUX="fake-tmux-session"
   claude --version

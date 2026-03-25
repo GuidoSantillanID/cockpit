@@ -12,10 +12,14 @@
 # Without tmux, falls through to the normal claude command.
 function claude() {
   if [[ -n "$TMUX" ]]; then
-    tmux set-option -wu automatic-rename
+    local branch label
+    branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
+    label="${branch:-${PWD##*/}}"
+    tmux rename-window "󰚩 $label"
     tmux set-option -w @is_claude_running 1
     command claude "$@"
     tmux set-option -wu @is_claude_running
+    tmux set-option -wu automatic-rename
   else
     command claude "$@"
   fi
