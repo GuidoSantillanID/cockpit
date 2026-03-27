@@ -110,10 +110,11 @@ emit_spacer() {
 
 _git_lookup() {
   local cache="$1" path="$2"
-  _gl_branch="" _gl_dirty=0 _gl_merged=0
-  while IFS=$'\x1e' read -r p b d m; do
+  _gl_branch="" _gl_dirty=0 _gl_merged=0 _gl_is_wt=0 _gl_project=""
+  while IFS=$'\x1e' read -r p b d m wt proj; do
     if [[ "$p" == "$path" ]]; then
-      _gl_branch="$b"; _gl_dirty="${d:-0}"; _gl_merged="${m:-0}"; return
+      _gl_branch="$b"; _gl_dirty="${d:-0}"; _gl_merged="${m:-0}"
+      _gl_is_wt="${wt:-0}"; _gl_project="${proj:-}"; return
     fi
   done <<< "$cache"
 }
@@ -144,12 +145,12 @@ build_list() {
         [[ -z "$path" ]] && continue
         (
           if ! git_out=$(git -C "$path" status -b --porcelain -uno 2>/dev/null); then
-            printf '%s\x1e\x1e0\x1e0\n' "$path"
+            printf '%s\x1e\x1e0\x1e0\x1e0\x1e\n' "$path"
             exit 0
           fi
           header="${git_out%%$'\n'*}"
           header="${header#\#\# }"
-          branch="" dirty=0 merged=0
+          branch="" dirty=0 merged=0 is_wt=0 project=""
           if [[ "$header" == "No commits yet on "* ]]; then
             branch="${header#No commits yet on }"
           else
@@ -161,7 +162,19 @@ build_list() {
             { git -C "$path" merge-base --is-ancestor HEAD origin/main 2>/dev/null || \
               git -C "$path" merge-base --is-ancestor HEAD origin/master 2>/dev/null; } && merged=1
           fi
-          printf '%s\x1e%s\x1e%s\x1e%s\n' "$path" "$branch" "$dirty" "$merged"
+          # Detect worktree: .git is a file (not dir) pointing into main repo
+          if [[ -f "$path/.git" ]]; then
+            local gitdir_ref
+            gitdir_ref=$(< "$path/.git")        # "gitdir: /main/repo/.git/worktrees/name"
+            gitdir_ref="${gitdir_ref#gitdir: }"
+            if [[ "$gitdir_ref" == */worktrees/* ]]; then
+              is_wt=1
+              local main_git="${gitdir_ref%%/worktrees/*}"  # /main/repo/.git
+              local main_repo="${main_git%/.git}"
+              project="${main_repo##*/}"
+            fi
+          fi
+          printf '%s\x1e%s\x1e%s\x1e%s\x1e%s\x1e%s\n' "$path" "$branch" "$dirty" "$merged" "$is_wt" "$project"
         ) &
       done <<< "$unique_paths"
       wait
@@ -296,16 +309,29 @@ build_list() {
       local branch="$_gl_branch"
       local is_dirty_cached="$_gl_dirty"
       local is_merged_cached="$_gl_merged"
+      local is_wt="$_gl_is_wt"
+      local project_name="$_gl_project"
+
+      # For worktrees, show the real project name instead of the worktree dir
+      if [[ "$is_wt" -eq 1 && -n "$project_name" ]]; then
+        dir_name="$project_name"
+      fi
 
       local branch_str=""
       if [[ -n "$branch" && "$branch" != "main" && "$branch" != "master" ]]; then
         printf -v branch_str '%b' " ${BLUE}${branch}${RESET}"
       fi
-      # Suppress branch when it's just dir_name with a prefix (e.g., wt/foo → foo)
-      if [[ -n "$branch_str" && ("$branch" == "$dir_name" || "$branch" == *"/$dir_name") ]]; then
+      # Suppress branch when it matches dir_name (case-insensitive, with optional prefix)
+      local branch_lc="${branch,,}" dir_name_lc="${dir_name,,}"
+      if [[ -n "$branch_str" && ("$branch_lc" == "$dir_name_lc" || "$branch_lc" == *"/$dir_name_lc") ]]; then
         branch_str=""
       fi
-      detail="${dir_name}${branch_str}"
+      # Worktree indicator
+      local wt_str=""
+      if [[ "$is_wt" -eq 1 ]]; then
+        printf -v wt_str '%b' " ${OVERLAY}[wt]${RESET}"
+      fi
+      detail="${dir_name}${branch_str}${wt_str}"
       # Attention badges
       local attn=""
       # 1. Claude done badge

@@ -1003,14 +1003,17 @@ setup_tmux_mock() {
 # ── git_is_merged ─────────────────────────────────────────────────────────────
 
 @test "git_is_merged: HEAD on main branch returns true" {
-  local tmpdir
+  local tmpdir origin_dir
   tmpdir=$(mktemp -d)
-  git init -q "$tmpdir"
+  origin_dir=$(mktemp -d)
+  git init -q --bare "$origin_dir"
+  git clone -q "$origin_dir" "$tmpdir" 2>/dev/null
   GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t.com \
   GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t.com \
     git -C "$tmpdir" commit --allow-empty -m "init" 2>/dev/null || true
+  git -C "$tmpdir" push -q origin main 2>/dev/null
   run git_is_merged "$tmpdir"
-  rm -rf "$tmpdir"
+  rm -rf "$tmpdir" "$origin_dir"
   [ "$status" -eq 0 ]
 }
 
@@ -1271,6 +1274,23 @@ setup_tmux_mock() {
   [ "$_gl_merged" = "0" ]
 }
 
+@test "_git_lookup: returns is_wt=1 and project name from 6-field cache" {
+  local cache
+  cache=$(printf '/wt/branch-dir\x1efeat/x\x1e0\x1e0\x1e1\x1emyproject\n')
+  _git_lookup "$cache" "/wt/branch-dir"
+  [ "$_gl_branch" = "feat/x" ]
+  [ "$_gl_is_wt" = "1" ]
+  [ "$_gl_project" = "myproject" ]
+}
+
+@test "_git_lookup: defaults is_wt=0 and project empty for 4-field cache" {
+  local cache
+  cache=$(printf '/repo/foo\x1emain\x1e0\x1e0\n')
+  _git_lookup "$cache" "/repo/foo"
+  [ "$_gl_is_wt" = "0" ]
+  [ "$_gl_project" = "" ]
+}
+
 # ── build_list: skip_git ──────────────────────────────────────────────────────
 
 @test "build_list: skip_git omits branch from detail" {
@@ -1518,6 +1538,105 @@ setup_tmux_mock() {
 }
 
 # ── branch suppression when redundant with dir_name ──────────────────────────
+
+@test "build_list: worktree window shows real project name and [wt] badge" {
+  local now
+  now=$(date +%s)
+  local tmpdir
+  tmpdir=$(mktemp -d)
+  # Create main repo with a commit so worktree add works
+  git init -q "$tmpdir/myproject"
+  git -C "$tmpdir/myproject" commit -q --allow-empty -m "init"
+  # Create a worktree — this makes .git a file, not a directory
+  git -C "$tmpdir/myproject" worktree add -q "$tmpdir/feat-branch" -b feat-branch 2>/dev/null
+  tmux() {
+    case "$1 $2" in
+      "list-sessions -F") printf '%s|myapp\n' "$(( now - 60 ))" ;;
+      "list-windows -a")  printf 'myapp|0|dev|zsh|%s|1||\n' "$tmpdir/feat-branch" ;;
+    esac
+  }
+  export -f tmux
+  local US=$'\x1f'
+  run build_list ""
+  rm -rf "$tmpdir"
+  local detail=""
+  for line in "${lines[@]}"; do
+    local key
+    key=$(printf '%s' "$line" | cut -d"$US" -f3)
+    if [[ "$key" == w:myapp:* ]]; then
+      detail=$(printf '%s' "$line" | cut -d"$US" -f2)
+      break
+    fi
+  done
+  # dir_name should be the real project name, not the worktree dir
+  [[ "$detail" == *"myproject"* ]]
+  # branch should be shown (not suppressed — it differs from project name)
+  [[ "$detail" == *"feat-branch"* ]]
+  # [wt] badge must be present
+  [[ "$detail" == *"[wt]"* ]]
+}
+
+@test "build_list: non-worktree window does not show [wt] badge" {
+  local now
+  now=$(date +%s)
+  local tmpdir
+  tmpdir=$(mktemp -d)
+  git init -q "$tmpdir"
+  git -C "$tmpdir" checkout -q -b feat/x 2>/dev/null || \
+    git -C "$tmpdir" symbolic-ref HEAD refs/heads/feat/x
+  tmux() {
+    case "$1 $2" in
+      "list-sessions -F") printf '%s|myapp\n' "$(( now - 60 ))" ;;
+      "list-windows -a")  printf 'myapp|0|dev|zsh|%s|1||\n' "$tmpdir" ;;
+    esac
+  }
+  export -f tmux
+  local US=$'\x1f'
+  run build_list ""
+  rm -rf "$tmpdir"
+  local detail=""
+  for line in "${lines[@]}"; do
+    local key
+    key=$(printf '%s' "$line" | cut -d"$US" -f3)
+    if [[ "$key" == w:myapp:* ]]; then
+      detail=$(printf '%s' "$line" | cut -d"$US" -f2)
+      break
+    fi
+  done
+  [[ "$detail" != *"[wt]"* ]]
+}
+
+@test "build_list: case-insensitive branch suppression" {
+  local now
+  now=$(date +%s)
+  local tmpdir
+  tmpdir=$(mktemp -d)
+  mkdir -p "$tmpdir/MyProject"
+  git init -q "$tmpdir/MyProject"
+  git -C "$tmpdir/MyProject" checkout -q -b myproject 2>/dev/null || \
+    git -C "$tmpdir/MyProject" symbolic-ref HEAD refs/heads/myproject
+  tmux() {
+    case "$1 $2" in
+      "list-sessions -F") printf '%s|sess\n' "$(( now - 60 ))" ;;
+      "list-windows -a")  printf 'sess|0|dev|zsh|%s|1||\n' "$tmpdir/MyProject" ;;
+    esac
+  }
+  export -f tmux
+  local US=$'\x1f'
+  run build_list ""
+  rm -rf "$tmpdir"
+  local detail=""
+  for line in "${lines[@]}"; do
+    local key
+    key=$(printf '%s' "$line" | cut -d"$US" -f3)
+    if [[ "$key" == w:sess:* ]]; then
+      detail=$(printf '%s' "$line" | cut -d"$US" -f2)
+      break
+    fi
+  done
+  # Branch "myproject" should be suppressed — matches dir "MyProject" case-insensitively
+  [[ "$detail" != *"myproject"* ]] || [[ "$detail" == "MyProject" ]]
+}
 
 @test "build_list: does not show branch when it ends with slash-dir_name" {
   local now
