@@ -13,6 +13,11 @@ TEXT='\033[38;2;205;214;244m'
 YELLOW='\033[38;2;249;226;175m'  # Catppuccin Mocha yellow #f9e2af
 RESET='\033[0m'
 
+trunc() {
+  local s="$1" max="${2:-20}"
+  [[ ${#s} -gt $max ]] && printf '%s…' "${s:0:$((max-1))}" || printf '%s' "$s"
+}
+
 # Nerd Font icons by window type
 ICON_CLAUDE="${PEACH}󰚩${RESET}"   # nf-md-creation (sparkle) — claude running
 ICON_SHELL="${OVERLAY}󰆍${RESET}"  # nf-md-console — shell window
@@ -267,7 +272,7 @@ build_list() {
           esac ;;
       esac
 
-      clean_name="${win_name#󰚩 }"
+      clean_name=$(trunc "${win_name#󰚩 }")
       # Dedup: window name same as session and idle shell → show "shell"
       if [[ "$clean_name" == "$name" && "$win_cmd" =~ ^(zsh|bash|fish)$ ]]; then
         clean_name="shell"
@@ -416,7 +421,7 @@ preview_session() {
     local wst wicon clean_name detail dir_name
     wst=$(window_claude_status "$w_running" "$w_done")
     wicon=$(window_icon "$wst" "$win_cmd")
-    clean_name="${win_name#󰚩 }"
+    clean_name=$(trunc "${win_name#󰚩 }")
     dir_name=$(basename "$win_path")
     detail="$dir_name"
     printf "${PEACH}%s:${RESET} %b ${TEXT}%s${RESET} ${OVERLAY}· %s${RESET}\n" \

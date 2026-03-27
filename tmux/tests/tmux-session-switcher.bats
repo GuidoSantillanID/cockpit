@@ -99,6 +99,28 @@ setup() {
   [ "$field3" = "" ]
 }
 
+# ── trunc ────────────────────────────────────────────────────────────────────
+
+@test "trunc: short string returned unchanged" {
+  run trunc "short"
+  [ "$output" = "short" ]
+}
+
+@test "trunc: string at exact max (20) returned unchanged" {
+  run trunc "12345678901234567890"
+  [ "$output" = "12345678901234567890" ]
+}
+
+@test "trunc: string one over max truncated with ellipsis" {
+  run trunc "123456789012345678901"
+  [ "$output" = "1234567890123456789…" ]
+}
+
+@test "trunc: long branch name truncated to 19 chars plus ellipsis" {
+  run trunc "GP-1167-Clean-Up-the-Dotnet-Controllers-and-APIs"
+  [ "$output" = "GP-1167-Clean-Up-th…" ]
+}
+
 # ── build_list ────────────────────────────────────────────────────────────────
 
 # Mock tmux to return canned data:
@@ -1465,6 +1487,34 @@ setup_tmux_mock() {
   # clean_name must be "main", not "󰚩 main" (which would duplicate the wicon)
   [[ "$field1" != *"󰚩 main"* ]]
   [[ "$field1" == *"main"* ]]
+}
+
+# ── window name truncation ───────────────────────────────────────────────────
+
+@test "build_list: truncates window name longer than 20 chars in display field" {
+  local now
+  now=$(date +%s)
+  local long_name="GP-1167-Clean-Up-the-Dotnet-Controllers-and-APIs"
+  tmux() {
+    case "$1 $2" in
+      "list-sessions -F") printf '%s|myproject\n' "$(( now - 60 ))" ;;
+      "list-windows -a")  printf 'myproject|0|%s|zsh|/home/user/myproject|1||\n' "$long_name" ;;
+    esac
+  }
+  export -f tmux
+  local US=$'\x1f'
+  run build_list "" "1"
+  local field1=""
+  for line in "${lines[@]}"; do
+    local key
+    key=$(printf '%s' "$line" | cut -d"$US" -f3)
+    if [[ "$key" == "w:myproject:0" ]]; then
+      field1=$(printf '%s' "$line" | cut -d"$US" -f1)
+      break
+    fi
+  done
+  [[ "$field1" != *"$long_name"* ]]
+  [[ "$field1" == *"GP-1167-Clean-Up-th…"* ]]
 }
 
 # ── branch suppression when redundant with dir_name ──────────────────────────
