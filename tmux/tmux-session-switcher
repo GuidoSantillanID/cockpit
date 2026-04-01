@@ -126,7 +126,7 @@ build_list() {
   printf -v now '%(%s)T' -1
 
   # Three batched tmux calls instead of N+NM per-session/window calls
-  sessions_raw=$(tmux list-sessions -F '#{session_last_attached}|#{session_name}|#{@hidden}' 2>/dev/null)
+  sessions_raw=$(tmux list-sessions -F '#{session_last_attached}|#{session_name}' 2>/dev/null)
   windows_raw=$(tmux list-windows -a -F '#{session_name}|#{window_index}|#{window_name}|#{pane_current_command}|#{pane_current_path}|#{window_active}|#{@is_claude_running}|#{@claude_done}' 2>/dev/null)
   panes_raw=$(tmux list-panes -a -F '#{session_name}|#{window_index}|#{pane_index}|#{pane_current_command}|#{pane_current_path}|#{pane_active}|#{@is_claude_running}|#{@claude_done}' 2>/dev/null)
 
@@ -183,28 +183,25 @@ build_list() {
 
   # Separate _default from all others (bash loops, no awk)
   local default_entry="" other_entries=""
-  while IFS='|' read -r ts name hidden; do
+  while IFS='|' read -r ts name; do
     [[ -z "$name" ]] && continue
-    if [[ "$name" == "_default" ]]; then default_entry="${ts}|${name}|${hidden}"
-    else other_entries+="${ts}|${name}|${hidden}"$'\n'; fi
+    if [[ "$name" == "_default" ]]; then default_entry="${ts}|${name}"
+    else other_entries+="${ts}|${name}"$'\n'; fi
   done <<< "$sessions_raw"
 
   local active_entries inactive_entries
   active_entries=$(
-    while IFS='|' read -r ts name hidden; do
+    while IFS='|' read -r ts name; do
       [[ -z "$name" ]] && continue
-      [[ "$hidden" == "1" ]] && continue
       local age=$(( now - ts ))
       (( age <= 172800 )) && printf '%s|%s\n' "$ts" "$name"
     done <<< "$other_entries" | sort -t'|' -k2
   )
   inactive_entries=$(
-    while IFS='|' read -r ts name hidden; do
+    while IFS='|' read -r ts name; do
       [[ -z "$name" ]] && continue
       local age=$(( now - ts ))
-      if [[ "$hidden" == "1" ]] || (( age > 172800 )); then
-        printf '%s|%s\n' "$ts" "$name"
-      fi
+      (( age > 172800 )) && printf '%s|%s\n' "$ts" "$name"
     done <<< "$other_entries" | sort -t'|' -k2
   )
 
@@ -496,7 +493,6 @@ handle_selection() {
   local field="$1"
   local session_name
   session_name=$(parse_session "$field")
-  tmux set -t "$session_name" -u @hidden 2>/dev/null
   tmux switch-client -t "$session_name" || exit 0
 
   # If a specific window was selected, jump to it
@@ -549,11 +545,10 @@ selected=$(printf '%s' "$list_body" | fzf \
   --preview-window='right:35%:wrap' \
   --bind="load:reload-sync($script_path --list)+pos($start_pos)+unbind(load)" \
   --bind="ctrl-d:execute-silent(tmux kill-session -t \$(echo {3} | sed 's/^[sw]://;s/:.*//'))+reload($script_path --list)" \
-  --bind="ctrl-h:execute-silent(tmux set -t \$(echo {3} | sed 's/^[sw]://;s/:.*//') @hidden 1)+reload($script_path --list)" \
   --bind='ctrl-/:toggle-preview' \
   --prompt='  sessions  ❯ ' \
   --pointer='▶' \
-  --header='enter: switch  ctrl-d: kill  ctrl-h: hide  ctrl-/: preview' \
+  --header='enter: switch  ctrl-d: kill  ctrl-/: preview' \
   --color='bg+:#313244,bg:#1e1e2e,spinner:#f5e0dc,hl:#f38ba8' \
   --color='fg:#cdd6f4,header:#f38ba8,info:#cba6f7,pointer:#f5e0dc' \
   --color='marker:#b4befe,fg+:#cdd6f4,prompt:#cba6f7,hl+:#f38ba8' \
