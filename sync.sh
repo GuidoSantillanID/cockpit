@@ -37,7 +37,6 @@ copy_if_exists "$HOME/.claude/ccline/models.toml"                   "$REPO_DIR/c
 copy_if_exists "$HOME/.claude/ccline/themes/guido-theme.toml"       "$REPO_DIR/claude/ccline/themes/guido-theme.toml"
 copy_if_exists "$HOME/shell-functions.zsh"                           "$REPO_DIR/shell-functions.zsh"
 copy_if_exists "$HOME/.local/bin/tmux-session-switcher"              "$REPO_DIR/tmux/tmux-session-switcher"
-copy_if_exists "$HOME/.local/bin/tmux-pane-focus"                    "$REPO_DIR/tmux/tmux-pane-focus"
 copy_if_exists "$HOME/.claude/CLAUDE.md"                             "$REPO_DIR/claude/CLAUDE.md"
 copy_if_exists "$HOME/.claude/skills/commit/SKILL.md"               "$REPO_DIR/claude/skills/commit/SKILL.md"
 copy_if_exists "$HOME/.claude/skills/p/SKILL.md"                    "$REPO_DIR/claude/skills/p/SKILL.md"
