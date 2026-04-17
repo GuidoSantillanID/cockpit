@@ -134,7 +134,7 @@ setup_hook() {
   tmux -L "$SOCK" select-pane -t "${SES}:1.1"
   # Hook: only resize when unzoomed (zoom guard = [ #{window_zoomed_flag} -eq 0 ])
   tmux -L "$SOCK" set-hook -g after-select-pane \
-    'if-shell "[ #{window_panes} -eq 2 ] && [ #{window_zoomed_flag} -eq 0 ]" "if-shell \"[ #{pane_index} -eq 1 ]\" \"resize-pane -x 70%\" \"resize-pane -x 55%\""'
+    'if-shell "[ #{window_panes} -eq 2 ] && [ #{window_zoomed_flag} -eq 0 ]" "if-shell \"[ #{pane_index} -eq 1 ]\" \"resize-pane -x 60%\" \"resize-pane -x 40%\""'
 }
 
 @test "hook: does not resize when window is zoomed" {
@@ -159,7 +159,7 @@ setup_hook() {
   local p1w total_w
   p1w=$(tmux -L "$SOCK" display-message -t "${SES}:1.1" -p '#{pane_width}')
   total_w=$(tmux -L "$SOCK" display-message -t "$SES" -p '#{window_width}')
-  # 70% of ~220 cols ≈ 154; must be wider than 50%
+  # 60% of ~220 cols ≈ 132; must be wider than 50%
   [ "$p1w" -gt "$(( total_w / 2 ))" ]
 }
 
