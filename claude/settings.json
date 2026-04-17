@@ -1,5 +1,23 @@
 {
-  "model": "opus[1m]",
+  "permissions": {
+    "allow": [
+      "Bash(ls:*)",
+      "Bash(git ls-tree:*)",
+      "Bash(find:*)",
+      "Bash(pnpm run type-check:*)",
+      "Bash(pnpm exec tsc:*)",
+      "Bash(pnpm typecheck:*)",
+      "Bash(npx tsc:*)",
+      "Bash(pnpm test:*)",
+      "WebSearch",
+      "Bash(pnpm list:*)",
+      "Bash(pnpm lint:*)",
+      "Bash(git fetch:*)",
+      "Bash(done)",
+      "Bash(grep:*)"
+    ],
+    "defaultMode": "default"
+  },
   "hooks": {
     "Stop": [
       {
@@ -59,7 +77,8 @@
       "Spinning up some magic"
     ]
   },
-  "effortLevel": "medium",
+  "effortLevel": "high",
   "autoMemoryEnabled": false,
-  "skipDangerousModePermissionPrompt": true
+  "skipDangerousModePermissionPrompt": true,
+  "model": "opus[1m]"
 }

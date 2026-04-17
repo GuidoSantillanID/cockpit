@@ -232,6 +232,12 @@ bind w display-popup -w 85% -h 80% -E "tmux-session-switcher"
 **Controls:**
 - `Enter` — switch to selected session (or specific window if a window row is selected)
 - `ctrl-d` — kill the selected session (then reloads the list)
+- `ctrl-x` — hide the selected session (moves to Inactive section via `@hidden`)
+- `ctrl-h` — toggle private on the selected session (mark/unmark `@private`)
+- `ctrl-r` — toggle visibility of private sessions (resets every time the switcher opens)
+- `ctrl-/` — toggle preview pane
+
+**Private sessions:** Sessions marked with `@private` are completely hidden from the list by default. Press `ctrl-r` to temporarily reveal them — they appear in their natural position (active/inactive based on age) with a lock icon `󰌾` next to the name. Private visibility resets every time the switcher opens. `ctrl-h` toggles the `@private` flag on the selected session. Switching to a revealed private session does not unmark it (unlike `@hidden`, which is cleared on switch).
 
 **Performance:** Two-phase load — phase 1 (~30ms, no git) renders instantly so the picker is interactive immediately; phase 2 (~80ms) backfills branch/dirty/stale info via `reload-sync` with no flash or cursor jump (`--track`). Git calls are parallelised, deduplicated by path, and use a single `git status -b --porcelain -uno` per path instead of separate `branch`+`status` calls.
 

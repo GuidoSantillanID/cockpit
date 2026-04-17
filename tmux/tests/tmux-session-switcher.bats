@@ -1694,3 +1694,538 @@ setup_tmux_mock() {
   done
   [[ "$detail" == *"● done"* ]]
 }
+
+# ── Private mode ─────────────────────────────────────────────────────────────
+
+# Shared mock for private-mode tests.
+# Arg 1: value for @switcher_show_private (empty = hidden, "1" = revealed)
+setup_private_tmux_mock() {
+  local now
+  now=$(date +%s)
+  MOCK_TS_PRIV=$(( now - 3600 ))
+  MOCK_SHOW_PRIVATE="${1:-}"
+  export MOCK_TS_PRIV MOCK_SHOW_PRIVATE
+  tmux() {
+    case "$1 $2" in
+      "list-sessions -F")
+        printf '%s|sessionA||\n' "$MOCK_TS_PRIV"
+        printf '%s|secretSession||1\n' "$MOCK_TS_PRIV"
+        printf '%s|sessionB||\n' "$MOCK_TS_PRIV"
+        ;;
+      "list-windows -a")
+        printf 'sessionA|0|dev|zsh|/tmp|1||\n'
+        printf 'secretSession|0|dev|zsh|/tmp|1||\n'
+        printf 'sessionB|0|dev|zsh|/tmp|1||\n'
+        ;;
+      "list-panes -a")
+        printf 'sessionA|0|0|zsh|/tmp|1||\n'
+        printf 'secretSession|0|0|zsh|/tmp|1||\n'
+        printf 'sessionB|0|0|zsh|/tmp|1||\n'
+        ;;
+      "show-options -gv")
+        [[ "$3" == "@switcher_show_private" && -n "$MOCK_SHOW_PRIVATE" ]] && printf '%s\n' "$MOCK_SHOW_PRIVATE"
+        ;;
+    esac
+  }
+  export -f tmux
+}
+
+# ── Group 1: Filtering ──────────────────────────────────────────────────────
+
+@test "build_list: private session excluded from list by default" {
+  setup_private_tmux_mock ""
+  local US=$'\x1f'
+  run build_list ""
+  for line in "${lines[@]}"; do
+    local key
+    key=$(printf '%s' "$line" | cut -d"$US" -f3)
+    [[ "$key" != "s:secretSession" ]]
+  done
+}
+
+@test "build_list: private session windows excluded from list by default" {
+  setup_private_tmux_mock ""
+  local US=$'\x1f'
+  run build_list ""
+  for line in "${lines[@]}"; do
+    local key
+    key=$(printf '%s' "$line" | cut -d"$US" -f3)
+    [[ "$key" != "w:secretSession:0" ]]
+  done
+}
+
+@test "build_list: non-private sessions still appear when private sessions exist" {
+  setup_private_tmux_mock ""
+  local US=$'\x1f'
+  run build_list ""
+  local has_a=0 has_b=0
+  for line in "${lines[@]}"; do
+    local key
+    key=$(printf '%s' "$line" | cut -d"$US" -f3)
+    [[ "$key" == "s:sessionA" ]] && has_a=1
+    [[ "$key" == "s:sessionB" ]] && has_b=1
+  done
+  [ "$has_a" -eq 1 ]
+  [ "$has_b" -eq 1 ]
+}
+
+@test "build_list: private session shown when @switcher_show_private is 1" {
+  setup_private_tmux_mock "1"
+  local US=$'\x1f'
+  run build_list ""
+  local found=0
+  for line in "${lines[@]}"; do
+    local key
+    key=$(printf '%s' "$line" | cut -d"$US" -f3)
+    [[ "$key" == "s:secretSession" ]] && found=1
+  done
+  [ "$found" -eq 1 ]
+}
+
+# ── Group 2: Lock icon ──────────────────────────────────────────────────────
+
+@test "build_list: private session shows lock icon when revealed" {
+  setup_private_tmux_mock "1"
+  local US=$'\x1f'
+  run build_list ""
+  local field1=""
+  for line in "${lines[@]}"; do
+    local key
+    key=$(printf '%s' "$line" | cut -d"$US" -f3)
+    if [[ "$key" == "s:secretSession" ]]; then
+      field1=$(printf '%s' "$line" | cut -d"$US" -f1)
+      break
+    fi
+  done
+  [[ "$field1" == *"󰌾"* ]]
+}
+
+@test "build_list: non-private session does not show lock icon when revealed" {
+  setup_private_tmux_mock "1"
+  local US=$'\x1f'
+  run build_list ""
+  local field1=""
+  for line in "${lines[@]}"; do
+    local key
+    key=$(printf '%s' "$line" | cut -d"$US" -f3)
+    if [[ "$key" == "s:sessionA" ]]; then
+      field1=$(printf '%s' "$line" | cut -d"$US" -f1)
+      break
+    fi
+  done
+  [[ "$field1" != *"󰌾"* ]]
+}
+
+# ── Group 3: Categorization ─────────────────────────────────────────────────
+
+@test "build_list: active private session appears in active section when revealed" {
+  setup_private_tmux_mock "1"
+  local US=$'\x1f'
+  run build_list ""
+  # secretSession is 1h old (active) — must appear before Inactive header
+  local found_secret=0 found_inactive_header=0
+  for line in "${lines[@]}"; do
+    local key f1
+    f1=$(printf '%s' "$line" | cut -d"$US" -f1)
+    key=$(printf '%s' "$line" | cut -d"$US" -f3)
+    [[ "$f1" == *"Inactive"* ]] && found_inactive_header=1
+    if [[ "$key" == "s:secretSession" ]]; then
+      found_secret=1
+      # Must appear before Inactive header
+      [ "$found_inactive_header" -eq 0 ]
+    fi
+  done
+  [ "$found_secret" -eq 1 ]
+}
+
+@test "build_list: inactive private session appears in inactive section when revealed" {
+  local now
+  now=$(date +%s)
+  MOCK_TS_PRIV_ACTIVE=$(( now - 3600 ))
+  MOCK_TS_PRIV_INACTIVE=$(( now - 86400 * 4 ))
+  MOCK_SHOW_PRIVATE="1"
+  export MOCK_TS_PRIV_ACTIVE MOCK_TS_PRIV_INACTIVE MOCK_SHOW_PRIVATE
+  tmux() {
+    case "$1 $2" in
+      "list-sessions -F")
+        printf '%s|sessionA||\n' "$MOCK_TS_PRIV_ACTIVE"
+        printf '%s|secretSession||1\n' "$MOCK_TS_PRIV_INACTIVE"
+        ;;
+      "list-windows -a")
+        printf 'sessionA|0|dev|zsh|/tmp|1||\n'
+        printf 'secretSession|0|dev|zsh|/tmp|1||\n'
+        ;;
+      "list-panes -a")
+        printf 'sessionA|0|0|zsh|/tmp|1||\n'
+        printf 'secretSession|0|0|zsh|/tmp|1||\n'
+        ;;
+      "show-options -gv")
+        [[ "$3" == "@switcher_show_private" && -n "$MOCK_SHOW_PRIVATE" ]] && printf '%s\n' "$MOCK_SHOW_PRIVATE"
+        ;;
+    esac
+  }
+  export -f tmux
+  local US=$'\x1f'
+  run build_list ""
+  # secretSession is 4 days old — must appear after Inactive header
+  local found_secret=0 found_inactive_header=0
+  for line in "${lines[@]}"; do
+    local f1 key
+    f1=$(printf '%s' "$line" | cut -d"$US" -f1)
+    key=$(printf '%s' "$line" | cut -d"$US" -f3)
+    [[ "$f1" == *"Inactive"* ]] && found_inactive_header=1
+    if [[ "$key" == "s:secretSession" ]]; then
+      found_secret=1
+      [ "$found_inactive_header" -eq 1 ]
+    fi
+  done
+  [ "$found_secret" -eq 1 ]
+}
+
+# ── Group 4: Dual flags (@hidden + @private) ────────────────────────────────
+
+@test "build_list: hidden+private session excluded when private hidden" {
+  local now
+  now=$(date +%s)
+  MOCK_TS_PRIV=$(( now - 3600 ))
+  MOCK_SHOW_PRIVATE=""
+  export MOCK_TS_PRIV MOCK_SHOW_PRIVATE
+  tmux() {
+    case "$1 $2" in
+      "list-sessions -F")
+        printf '%s|sessionA||\n' "$MOCK_TS_PRIV"
+        printf '%s|secretSession|1|1\n' "$MOCK_TS_PRIV"
+        ;;
+      "list-windows -a")
+        printf 'sessionA|0|dev|zsh|/tmp|1||\n'
+        printf 'secretSession|0|dev|zsh|/tmp|1||\n'
+        ;;
+      "list-panes -a")
+        printf 'sessionA|0|0|zsh|/tmp|1||\n'
+        printf 'secretSession|0|0|zsh|/tmp|1||\n'
+        ;;
+      "show-options -gv")
+        [[ "$3" == "@switcher_show_private" && -n "$MOCK_SHOW_PRIVATE" ]] && printf '%s\n' "$MOCK_SHOW_PRIVATE"
+        ;;
+    esac
+  }
+  export -f tmux
+  local US=$'\x1f'
+  run build_list ""
+  for line in "${lines[@]}"; do
+    local key
+    key=$(printf '%s' "$line" | cut -d"$US" -f3)
+    [[ "$key" != "s:secretSession" ]]
+  done
+}
+
+@test "build_list: hidden+private session in inactive section when revealed" {
+  local now
+  now=$(date +%s)
+  MOCK_TS_PRIV=$(( now - 3600 ))
+  MOCK_SHOW_PRIVATE="1"
+  export MOCK_TS_PRIV MOCK_SHOW_PRIVATE
+  tmux() {
+    case "$1 $2" in
+      "list-sessions -F")
+        printf '%s|sessionA||\n' "$MOCK_TS_PRIV"
+        printf '%s|secretSession|1|1\n' "$MOCK_TS_PRIV"
+        ;;
+      "list-windows -a")
+        printf 'sessionA|0|dev|zsh|/tmp|1||\n'
+        printf 'secretSession|0|dev|zsh|/tmp|1||\n'
+        ;;
+      "list-panes -a")
+        printf 'sessionA|0|0|zsh|/tmp|1||\n'
+        printf 'secretSession|0|0|zsh|/tmp|1||\n'
+        ;;
+      "show-options -gv")
+        [[ "$3" == "@switcher_show_private" && -n "$MOCK_SHOW_PRIVATE" ]] && printf '%s\n' "$MOCK_SHOW_PRIVATE"
+        ;;
+    esac
+  }
+  export -f tmux
+  local US=$'\x1f'
+  run build_list ""
+  local found_secret=0 found_inactive_header=0
+  for line in "${lines[@]}"; do
+    local f1 key
+    f1=$(printf '%s' "$line" | cut -d"$US" -f1)
+    key=$(printf '%s' "$line" | cut -d"$US" -f3)
+    [[ "$f1" == *"Inactive"* ]] && found_inactive_header=1
+    if [[ "$key" == "s:secretSession" ]]; then
+      found_secret=1
+      [ "$found_inactive_header" -eq 1 ]
+    fi
+  done
+  [ "$found_secret" -eq 1 ]
+}
+
+# ── Group 5: Edge cases ─────────────────────────────────────────────────────
+
+@test "build_list: all sessions private produces no session keys" {
+  local now
+  now=$(date +%s)
+  MOCK_TS_PRIV=$(( now - 3600 ))
+  MOCK_SHOW_PRIVATE=""
+  export MOCK_TS_PRIV MOCK_SHOW_PRIVATE
+  tmux() {
+    case "$1 $2" in
+      "list-sessions -F")
+        printf '%s|onlySession||1\n' "$MOCK_TS_PRIV"
+        ;;
+      "list-windows -a")
+        printf 'onlySession|0|dev|zsh|/tmp|1||\n'
+        ;;
+      "list-panes -a")
+        printf 'onlySession|0|0|zsh|/tmp|1||\n'
+        ;;
+      "show-options -gv")
+        [[ "$3" == "@switcher_show_private" && -n "$MOCK_SHOW_PRIVATE" ]] && printf '%s\n' "$MOCK_SHOW_PRIVATE"
+        ;;
+    esac
+  }
+  export -f tmux
+  local US=$'\x1f'
+  run build_list ""
+  for line in "${lines[@]}"; do
+    local key
+    key=$(printf '%s' "$line" | cut -d"$US" -f3)
+    [[ "$key" != s:* ]]
+  done
+}
+
+@test "build_list: POS defaults to 1 when tracked session is private and hidden" {
+  setup_private_tmux_mock ""
+  run build_list "secretSession"
+  [[ "${lines[0]}" == "POS:1" ]]
+}
+
+@test "build_list: idx numbering skips private sessions when hidden" {
+  setup_private_tmux_mock ""
+  local US=$'\x1f'
+  run build_list ""
+  # sessionA and sessionB should get consecutive idx (1, 2) with no gap
+  local idx_a="" idx_b=""
+  for line in "${lines[@]}"; do
+    local key f1 stripped
+    key=$(printf '%s' "$line" | cut -d"$US" -f3)
+    f1=$(printf '%s' "$line" | cut -d"$US" -f1)
+    # Strip ANSI escapes before extracting the numeric index
+    stripped=$(printf '%s' "$f1" | sed $'s/\x1b\\[[0-9;]*m//g')
+    if [[ "$key" == "s:sessionA" ]]; then
+      idx_a=$(printf '%s' "$stripped" | grep -o '[0-9]\+' | head -1)
+    fi
+    if [[ "$key" == "s:sessionB" ]]; then
+      idx_b=$(printf '%s' "$stripped" | grep -o '[0-9]\+' | head -1)
+    fi
+  done
+  [ -n "$idx_a" ]
+  [ -n "$idx_b" ]
+  [ "$(( idx_b - idx_a ))" -eq 1 ]
+}
+
+# ── Group 6: handle_selection ────────────────────────────────────────────────
+
+@test "handle_selection: does not unset @private when switching to session" {
+  local tmpdir
+  tmpdir=$(mktemp -d)
+  export tmpdir
+  tmux() {
+    echo "tmux $*" >> "$tmpdir/tmux-calls.log"
+    case "$1" in
+      switch-client) return 0 ;;
+      *) return 0 ;;
+    esac
+  }
+  export -f tmux
+  run handle_selection "s:secretSession"
+  # Must NOT contain any call with @private
+  ! grep -q "@private" "$tmpdir/tmux-calls.log" 2>/dev/null
+  rm -rf "$tmpdir"
+}
+
+# ── Group 7: Binding grep tests ─────────────────────────────────────────────
+
+@test "fzf invocation: ctrl-x binding sets @hidden" {
+  grep -q 'ctrl-x.*@hidden' "$SCRIPT"
+}
+
+@test "fzf invocation: ctrl-h binding toggles @private" {
+  grep -q 'ctrl-h.*@private' "$SCRIPT"
+}
+
+@test "fzf invocation: ctrl-r binding toggles @switcher_show_private" {
+  grep -q 'ctrl-r.*@switcher_show_private' "$SCRIPT"
+}
+
+@test "fzf invocation: header shows ctrl-r reveal" {
+  grep -q 'ctrl-r.*reveal' "$SCRIPT"
+}
+
+@test "fzf invocation: header shows ctrl-x hide" {
+  grep -q 'ctrl-x.*hide' "$SCRIPT"
+}
+
+@test "fzf invocation: header shows ctrl-h lock" {
+  grep -q 'ctrl-h.*lock' "$SCRIPT"
+}
+
+@test "fzf invocation: ctrl-r binding uses become for theme switch" {
+  grep -q 'ctrl-r.*become.*--run' "$SCRIPT"
+}
+
+@test "theme: Catppuccin Latte colors defined for reveal mode" {
+  grep -q '#eff1f5' "$SCRIPT"
+}
+
+@test "theme: Catppuccin Mocha colors defined for default mode" {
+  grep -q '#1e1e2e' "$SCRIPT"
+}
+
+@test "main block: skips @switcher_show_private reset on --run re-entry" {
+  grep -q '"$1" != "--run"' "$SCRIPT"
+}
+
+# ── Group 8: @switcher_show_private reset ────────────────────────────────────
+
+@test "main block: clears @switcher_show_private on launch" {
+  grep -q 'set -gu @switcher_show_private' "$SCRIPT"
+}
+
+# ── Group 9: Private _default ────────────────────────────────────────────────
+
+@test "build_list: private _default excluded when hidden" {
+  local now
+  now=$(date +%s)
+  MOCK_TS_PRIV=$(( now - 3600 ))
+  MOCK_SHOW_PRIVATE=""
+  export MOCK_TS_PRIV MOCK_SHOW_PRIVATE
+  tmux() {
+    case "$1 $2" in
+      "list-sessions -F")
+        printf '%s|_default||1\n' "$MOCK_TS_PRIV"
+        printf '%s|sessionA||\n' "$MOCK_TS_PRIV"
+        ;;
+      "list-windows -a")
+        printf '_default|0|dev|zsh|/tmp|1||\n'
+        printf 'sessionA|0|dev|zsh|/tmp|1||\n'
+        ;;
+      "list-panes -a")
+        printf '_default|0|0|zsh|/tmp|1||\n'
+        printf 'sessionA|0|0|zsh|/tmp|1||\n'
+        ;;
+      "show-options -gv")
+        [[ "$3" == "@switcher_show_private" && -n "$MOCK_SHOW_PRIVATE" ]] && printf '%s\n' "$MOCK_SHOW_PRIVATE"
+        ;;
+    esac
+  }
+  export -f tmux
+  local US=$'\x1f'
+  run build_list ""
+  for line in "${lines[@]}"; do
+    local key
+    key=$(printf '%s' "$line" | cut -d"$US" -f3)
+    [[ "$key" != "s:_default" ]]
+  done
+}
+
+@test "build_list: private _default shown with lock when revealed" {
+  local now
+  now=$(date +%s)
+  MOCK_TS_PRIV=$(( now - 3600 ))
+  MOCK_SHOW_PRIVATE="1"
+  export MOCK_TS_PRIV MOCK_SHOW_PRIVATE
+  tmux() {
+    case "$1 $2" in
+      "list-sessions -F")
+        printf '%s|_default||1\n' "$MOCK_TS_PRIV"
+        printf '%s|sessionA||\n' "$MOCK_TS_PRIV"
+        ;;
+      "list-windows -a")
+        printf '_default|0|dev|zsh|/tmp|1||\n'
+        printf 'sessionA|0|dev|zsh|/tmp|1||\n'
+        ;;
+      "list-panes -a")
+        printf '_default|0|0|zsh|/tmp|1||\n'
+        printf 'sessionA|0|0|zsh|/tmp|1||\n'
+        ;;
+      "show-options -gv")
+        [[ "$3" == "@switcher_show_private" && -n "$MOCK_SHOW_PRIVATE" ]] && printf '%s\n' "$MOCK_SHOW_PRIVATE"
+        ;;
+    esac
+  }
+  export -f tmux
+  local US=$'\x1f'
+  run build_list ""
+  local found=0 field1=""
+  for line in "${lines[@]}"; do
+    local key
+    key=$(printf '%s' "$line" | cut -d"$US" -f3)
+    if [[ "$key" == "s:_default" ]]; then
+      field1=$(printf '%s' "$line" | cut -d"$US" -f1)
+      found=1
+      break
+    fi
+  done
+  [ "$found" -eq 1 ]
+  [[ "$field1" == *"󰌾"* ]]
+}
+
+# ── Group 10: Private + attention badge ──────────────────────────────────────
+
+@test "build_list: private session with attention shows both lock and warning badge" {
+  local now
+  now=$(date +%s)
+  MOCK_TS_PRIV=$(( now - 3600 ))
+  MOCK_SHOW_PRIVATE="1"
+  export MOCK_TS_PRIV MOCK_SHOW_PRIVATE
+  tmux() {
+    case "$1 $2" in
+      "list-sessions -F")
+        # secretSession is private, and its window has @claude_done set → attention
+        printf '%s|secretSession||1\n' "$MOCK_TS_PRIV"
+        ;;
+      "list-windows -a")
+        printf 'secretSession|0|dev|zsh|/tmp|1||done\n'
+        ;;
+      "list-panes -a")
+        printf 'secretSession|0|0|zsh|/tmp|1||done\n'
+        ;;
+      "show-options -gv")
+        [[ "$3" == "@switcher_show_private" && -n "$MOCK_SHOW_PRIVATE" ]] && printf '%s\n' "$MOCK_SHOW_PRIVATE"
+        ;;
+    esac
+  }
+  export -f tmux
+  local US=$'\x1f'
+  run build_list "" "1"
+  local field1=""
+  for line in "${lines[@]}"; do
+    local key
+    key=$(printf '%s' "$line" | cut -d"$US" -f3)
+    if [[ "$key" == "s:secretSession" ]]; then
+      field1=$(printf '%s' "$line" | cut -d"$US" -f1)
+      break
+    fi
+  done
+  [[ "$field1" == *"󰌾"* ]]
+  [[ "$field1" == *"⚠"* ]]
+}
+
+# ── Group 11: Two-phase load consistency ─────────────────────────────────────
+
+@test "build_list: fast and full load produce same line count with private sessions" {
+  setup_private_tmux_mock ""
+  local fast_count full_count
+  fast_count=$(build_list "" "1" | wc -l | tr -d ' ')
+  full_count=$(build_list "" | wc -l | tr -d ' ')
+  [ "$fast_count" -eq "$full_count" ]
+}
+
+# ── Group 12: Toggle-off grep ────────────────────────────────────────────────
+
+@test "fzf invocation: ctrl-h binding contains both set and unset for @private toggle" {
+  grep -q '@private 1' "$SCRIPT"
+  grep -q '\-u @private' "$SCRIPT"
+}
