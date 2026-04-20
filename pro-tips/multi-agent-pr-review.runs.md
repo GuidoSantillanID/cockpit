@@ -83,7 +83,8 @@ commit (bab08177d "address multi-agent PR review findings"). No explicit
 
 ## Run: 2026-04-20 — genomics-product GP-1167 (second dogfood, skill-driven)
 
-**Scope:** `components/web/**` · 150 files · rounds: R1 only
+**Scope:** `components/web/**` · 150 files (R1) → 164 files (R2, post-fix)
+· rounds: R1 + Fix Phase + R2
 **Agents dispatched:** standards×3, regression×3, process×1 (7 total);
 structured skipped as redundant
 **Chunked:** yes — W1 routes+contracts (33), W2 fine-tuning (59), W3 other
@@ -132,6 +133,39 @@ expand scope:
   the named caller was not the only one; `edit-guide-form.tsx` also
   needed updating.
 
+**R2 phase (adversarial, post-fix):** Agents 5×E (adversarial,
+metadata-blind) chunked W1/W2/W3, 164 files. 64 raw findings → 24
+surviving after verify+filter+dedupe: 7 BLOCKING, 11 SHOULD-FIX,
+6 WATCH. Judge: ~5m 10s, 69.8k tokens (smaller input than R1 judge
+→ faster). R2 still used `/tmp/*.json` disk handoff for findings
+despite the new inline-handoff rule — either stale skill state or
+rule not followed; confirm on next run.
+
+**R2 BLOCKINGs broke into three categories:**
+- **Fix-induced regressions (3):** B1 lint bug (imports after type
+  declarations) introduced by Cluster C; B6 sentinel half-done
+  (write-path fixed, read-path not — `?order-form=ALL` deep-link
+  leaks 'ALL' literal into backend); B7 `orderFormId=null/undefined`
+  literal in fetch URL. None caught by per-cluster typecheck/lint/tests
+  because they were semantic, not syntactic, and crossed cluster
+  boundaries.
+- **Fix-incomplete findings (1):** B2 stageModelAction — Cluster B's
+  fix was "directionally correct but incomplete." Inner try/catch
+  still swallows errors into `result.data.failure`; serverError never
+  fires. Same under-scoping pattern as R1 findings — fix-phase output
+  can be under-scoped too.
+- **R1 blindspots (3):** B4 useTestSetUpload `useAction(createTestFiles
+  as any)` structurally broken; B5 fetchPaginatedBalanceHistory
+  camelCase outlier; several SHOULD-FIX (delete-run-modal silent
+  success, `RUN_STATUS.Created=0` truthy-drop in SignalR handler,
+  duplicate vi.mock factories). These were in R1's scope but R1 didn't
+  surface them — single-pass review has real recall gaps.
+
+**R2 verdict:** "Needs Work" — reviewer's own honest assessment from
+the session transcript: "R2 was clearly worth running. It caught real
+fix-induced regressions in my own work that no single-pass review
+would have found."
+
 ### What worked
 - High-confidence promotion logic earned its keep: 4 of 7 BLOCKINGs were
   flagged by ≥2 independent reviewer lenses (standards + regression
@@ -152,6 +186,13 @@ expand scope:
   integration. Red-green TDD applied to every UI-crash finding. This
   pattern deserves its own §Fix Phase writeup in the playbook
   (currently underspecified).
+- **R2 decisively earned its cost.** 7 BLOCKINGs, of which 3 were
+  fix-induced regressions that would have shipped without R2, 3 were
+  R1 blindspots on unfixed code, and 1 was a fix-incomplete finding.
+  The playbook already recommends R2 on follow-up reviews; this run
+  is strong evidence the recommendation should become automatic
+  rather than optional (Gap #5). R2's own judge was faster than R1's
+  (5m vs 13m) because the pre-filtered input was smaller.
 - Judge's 78% drop rate is working as intended — separates real findings
   from reviewer noise. Dropped breakdown (44 category_cap, 18 not_accurate,
   15 verification_failed) matches expected shape.
@@ -181,6 +222,25 @@ expand scope:
   Skill did not detect or flag this; 7 new BLOCKINGs after a prior pass
   suggests the fixes themselves introduced regressions, which would have
   justified an automatic R2 recommendation.
+- **Fix Phase per-cluster verification is insufficient.** Each cluster
+  ran typecheck + lint + tests and came back green, yet R2 found a
+  CI-breaking lint bug (imports interleaved with types), a half-done
+  sentinel fix (write-path fixed, read-path not), and a dead
+  abstraction (ServerOnlyApiError with zero importers). Per-cluster
+  checks catch syntactic errors but not semantic regressions or
+  cross-cluster interactions. Fix Phase needs an adversarial review
+  step before declaring done (see Gap #8).
+- **Fix-phase output can be under-scoped.** Cluster B's stage-model
+  fix was "directionally correct but incomplete" — the inner try/catch
+  still swallowed errors. Same under-scoping pattern the R1 reviewers
+  had. Whatever mitigation applies to reviewer under-scoping (Gap #7)
+  should apply to fix agents too.
+- **R1 has non-trivial recall gaps.** R2 found ~10 correctness bugs
+  that were present in R1's scope (delete-run-modal silent-success,
+  `RUN_STATUS.Created=0` truthy-drop, duplicate vi.mock factories,
+  TZ-dependent expiry helper). R1's 124 raw findings were not
+  exhaustive. "R1 + judge" is not a safe default on production-critical
+  or follow-up review PRs.
 
 ### Playbook/skill changes this run produced
 - **Playbook §Chunking:** relaxed from "≤50 files/agent, chunk by default"
@@ -224,4 +284,14 @@ expand scope:
 ### Pending (not yet fixed in skill/playbook)
 - Gap #3: budget accounting (no `budget_spent_usd` in envelope).
 - Gap #4: process-agent opt-in vs default.
-- Gap #5: follow-up-review detection on prior-review-commit branches.
+- Gap #5: follow-up-review detection on prior-review-commit branches
+  — R2 evidence strengthens the case for making this automatic.
+- Gap #6: HC precision validation (still one-run sample).
+- Gap #7: reviewer under-scoping — now also applies to fix agents.
+- Gap #8: Fix Phase under-specified — R2 evidence shows per-cluster
+  verification is insufficient; adversarial review after Fix Phase
+  should be the default, not optional.
+- Gap #9 (new): R2 followed the old `/tmp/*.json` handoff pattern
+  despite the new inline-handoff rule. Either session had stale
+  skill state or the rule isn't being read. Confirm on next run;
+  may need a stronger prohibition or a lint-style check.

@@ -30,8 +30,12 @@ Remove an item when its fix ships AND a subsequent run confirms it holds.
 - **Gap #5: Follow-up review detection.** If the branch already contains a
   commit with subject matching `/address (multi-agent|code review) findings/i`
   or similar, skill should flag "prior review detected — R2 strongly
-  recommended" in pre-flight. Surfaced in Run 2: 7 fresh BLOCKINGs after a
-  prior review commit suggested fixes introduced regressions.
+  recommended" in pre-flight. Surfaced in Run 2 R1 phase: 7 fresh BLOCKINGs
+  after a prior review commit suggested fixes introduced regressions.
+  **Run 2 R2 phase confirmed:** 3/7 R2 BLOCKINGs were fix-induced
+  regressions that would have shipped without the adversarial second pass.
+  Candidate upgrade: promote R2 on follow-up reviews from "recommended" to
+  "default, suppressable only with explicit user flag."
 - **Gap #6: HC signal validation.** High-confidence promotion fires when ≥2
   reviewers converge. Run 2 gave first data: HC precision 4/4, non-HC
   precision 3/3 — both 100% in that single run, so HC's added value over
@@ -42,16 +46,31 @@ Remove an item when its fix ships AND a subsequent run confirms it holds.
   the reviewer correctly flagged a bug but named fewer files than the
   pattern occupied (e.g., `useAction(... as any)` flagged in some files
   but present across manage-api-keys, runs-details, cookbook). All
-  findings were real; fix-phase had to expand scope. Candidate
-  mitigation: tell reviewers "if you flag a pattern, grep for all
-  instances in the path_filter before reporting." Needs testing — may
-  bloat findings with false matches.
+  findings were real; fix-phase had to expand scope. **Run 2 R2 phase
+  extended this:** fix-phase output itself can be under-scoped — Cluster
+  B's stageModelAction fix was "directionally correct but incomplete."
+  Candidate mitigation: tell reviewers AND fix agents "if you flag or
+  fix a pattern, grep for all instances in the path_filter before
+  reporting/declaring done." Needs testing — may bloat findings with
+  false matches.
 - **Gap #8: Fix Phase is under-specified.** The playbook's current
   §Fix Phase is 4 lines; Run 2 used a richer pattern (4 parallel dev
   clusters with non-overlapping file scopes, red-green TDD per UI-crash
   finding, per-cluster typecheck/lint/test + whole-app final sweep,
   explicit "out-of-cluster scope" flagging for under-scoped findings).
+  **Run 2 R2 phase showed per-cluster verification is insufficient:**
+  a CI-breaking lint bug, a half-done sentinel fix, and a dead
+  abstraction all slipped through cluster-local checks because they
+  were semantic/cross-cluster. Fix Phase should default to "R2
+  adversarial review on the fixes themselves" before declaring done.
   Worth writing up as the default shape.
+- **Gap #9: Inline judge-handoff rule not followed.** The playbook's
+  new Judge Phase rule forbids `/tmp/*.json` round-trips and requires
+  findings inline in the judge prompt. Run 2 R2 still used the `/tmp`
+  pattern — either the session had stale skill/playbook state or the
+  rule wasn't read. No visible corruption this time, but the rule
+  existed precisely to remove this failure mode. Confirm on next run
+  whether the rule is being honored.
 
 ---
 
