@@ -27,6 +27,27 @@ Read the full playbook before Step 1. Do not skim.
 
 ## Step 1: Pre-flight checklist (MANDATORY)
 
+### 1a. Multi-component scope check (do this FIRST)
+
+If the diff spans **2+ top-level components/packages**, ask the user which
+scope to review **before** building the checklist. Do NOT pre-chunk everything
+and wait for them to narrow — they almost always narrow, and the upfront
+chunking wastes your context and the user's time.
+
+Detect with:
+
+```bash
+git diff --name-only <base>...<head> | awk -F/ 'NF>=2 { print $1"/"$2 }' | sort -u
+```
+
+If 2+ distinct prefixes return (e.g., `components/api`, `components/web`,
+`components/sdk`), list them with file counts and ask a single question:
+"Which scope? (e.g., `components/web/**`, or `all`)". Use the answer as
+`path_filter` below. If the diff is confined to one component, skip this
+sub-step and proceed.
+
+### 1b. Resolve the checklist
+
 Fill in every field before dispatching. Do NOT dispatch until all fields are
 resolved and emitted to the user as a visible block — guessing wastes agent
 budgets and hides assumptions.
@@ -35,11 +56,11 @@ budgets and hides assumptions.
 |---|---|
 | `base` | Default `origin/main`. Confirm with `git remote -v` if unsure. |
 | `head` | Default `HEAD`. |
-| `path_filter` | From skill argument if provided, else ask the user or default to `**`. |
+| `path_filter` | From Step 1a answer, or skill argument, else ask the user. Default `**` only if no multi-component split exists. |
 | `files_changed` | `git diff --name-only <base>...<head> -- <path_filter>` piped to `wc -l`. |
 | `rounds` | Default `R1`. Add `R2` if diff touches auth/sec, dep upgrades, production-critical paths, or exceeds ~100 files. |
 | `agents` | Default roster: Agent 1 (standards), Agent 2 (process), Agent 4 (regression). Agent 3 (structured) is optional. Skip any agent whose lens has no surface in the diff — record in `envelope.skipped_agents` with a reason. |
-| `chunks` | If `files_changed > 50`, split by directory or feature slice per playbook §Run envelope. Target ≤ 50 files per agent. Do NOT chunk by reviewer lens alone. |
+| `chunks` | **Default: no chunking** (one chunk per lens covering the full `path_filter`). Chunk only when `files_changed > 200` per agent, a prior run stalled on this diff, or the user explicitly requests it. See playbook §Chunking. Do NOT chunk by reviewer lens alone. |
 | `budget_cap_usd` | Default 1.50 per round. |
 
 Emit the checklist in a markdown block and pause for user override before
@@ -65,6 +86,13 @@ Same for agents that were paused mid-run and re-resumed with a stale stream.
 ## Step 3: Judge
 
 Sonnet, temperature 0.25, metadata-stripped input (no branch/commit/ticket).
+
+**Handoff format: inline.** Embed R1 findings directly in the judge prompt
+body as JSON (or NDJSON for >200 findings). Do NOT write findings to a
+`/tmp/*.json` file and pass the path to the judge — the disk round-trip has
+produced corrupted intermediate files, and it strips visibility into what the
+judge actually read. See playbook §Judge Phase → Handoff format.
+
 Follow playbook §Judge Phase steps 1–7:
 
 1. Verification pass — run every `verification_command`; drop on failure.

@@ -12,6 +12,49 @@ happens at Judge phase).
 
 ---
 
+## Known gaps / pending improvements
+
+Live TODO backed by evidence from `multi-agent-pr-review.runs.md`. Items land
+here when a dogfood run surfaces a problem not yet fixed in the playbook/skill.
+Remove an item when its fix ships AND a subsequent run confirms it holds.
+
+- **Gap #3: Budget accounting.** `budget_cap_usd` is stated in the pre-flight
+  checklist but never measured or reported post-run. Envelope should carry
+  `budget_spent_usd` per round, populated by the judge from actual token
+  usage. Surfaced in Runs 1 + 2.
+- **Gap #4: Process agent as default.** On well-formed PRs it contributes
+  only WATCH-level findings (Run 2: 3 WATCH, zero BLOCKING/SHOULD-FIX).
+  Candidate for opt-in rather than default-on. Need one more run of data
+  before deciding — if Process finds anything BLOCKING/SHOULD-FIX on Run 3,
+  keep as default; otherwise demote.
+- **Gap #5: Follow-up review detection.** If the branch already contains a
+  commit with subject matching `/address (multi-agent|code review) findings/i`
+  or similar, skill should flag "prior review detected — R2 strongly
+  recommended" in pre-flight. Surfaced in Run 2: 7 fresh BLOCKINGs after a
+  prior review commit suggested fixes introduced regressions.
+- **Gap #6: HC signal validation.** High-confidence promotion fires when ≥2
+  reviewers converge. Run 2 gave first data: HC precision 4/4, non-HC
+  precision 3/3 — both 100% in that single run, so HC's added value over
+  non-HC is unproven. Need ≥2 more runs with at least one false-positive
+  BLOCKING to calibrate whether HC is more predictive than non-HC or just
+  a dedup tag.
+- **Gap #7: Under-scoped findings.** Run 2 fix-phase hit 3 findings where
+  the reviewer correctly flagged a bug but named fewer files than the
+  pattern occupied (e.g., `useAction(... as any)` flagged in some files
+  but present across manage-api-keys, runs-details, cookbook). All
+  findings were real; fix-phase had to expand scope. Candidate
+  mitigation: tell reviewers "if you flag a pattern, grep for all
+  instances in the path_filter before reporting." Needs testing — may
+  bloat findings with false matches.
+- **Gap #8: Fix Phase is under-specified.** The playbook's current
+  §Fix Phase is 4 lines; Run 2 used a richer pattern (4 parallel dev
+  clusters with non-overlapping file scopes, red-green TDD per UI-crash
+  finding, per-cluster typecheck/lint/test + whole-app final sweep,
+  explicit "out-of-cluster scope" flagging for under-scoped findings).
+  Worth writing up as the default shape.
+
+---
+
 ## Run envelope
 
 Target for a typical branch (<50 changed files):
@@ -27,22 +70,32 @@ Most PRs need only Round 1 + judge. Run Round 2 when stakes are high (auth, dep
 upgrades, production-critical paths, large diffs). Scale caps up proportionally
 for diffs over 50 files.
 
-**Per-agent file cap (rule of thumb).** Target **≤ 50 files per agent**. The
-600s no-progress watchdog and ~10-min stream-idle ceiling are real limits; a
-reviewer working through a very large diff is more likely to bump into them,
-and a stall mid-review wastes the entire agent's budget. Split BEFORE dispatch
-rather than hoping the agent copes:
+**Chunking (default: off).** Chunking multiplies agents (N chunks × M lenses)
+and multiplies cost + judge input size linearly. The actual runtime limit is
+the 600s no-progress watchdog / ~10-min stream-idle ceiling — file count is a
+proxy, not the signal. **Do not chunk reflexively on file count.**
 
-- **Preferred:** chunk by directory or feature slice (e.g., `app/api/**`,
+Default: no chunking up to ~200 changed files per agent. Chunk only when one
+of these holds:
+
+1. A prior unchunked run of this diff stalled (idle timeout, not user-paused).
+2. File count exceeds ~200 per agent AND the diff spans clearly orthogonal
+   feature slices where per-slice depth is more useful than cross-slice
+   pattern detection.
+3. The user explicitly scopes chunking in pre-flight.
+
+If chunking:
+
+- **Preferred:** by directory or feature slice (e.g., `app/api/**`,
   `features/fine-tuning/**`). Each chunk keeps the same reviewer lens; the
   judge merges findings across chunks by `source_reviewer`.
-- **Fallback:** chunk by file-type (routes, components, tests) when the diff
-  has no clear directory structure.
-- **Do NOT** chunk by reviewer lens alone — that's orthogonal to file count and
-  doesn't reduce any single agent's load.
+- **Fallback:** by file-type when the diff has no clear directory structure.
+- **Do NOT** chunk by reviewer lens alone — that's orthogonal to file count
+  and doesn't reduce any single agent's load.
 
-Record the chunking plan in the envelope under `scope` (see §Envelope schema)
-so a future reader knows what each agent actually saw.
+Record the chunking plan in the envelope under `scope` (see §Envelope schema).
+For unchunked runs, record a single `chunks` entry:
+`{ "agent": "all", "paths": ["<path_filter>"], "files": N }`.
 
 ---
 
@@ -155,6 +208,19 @@ tuned optimum.
 **Input:** reviewer findings JSON only. **Strip PR metadata** — no branch name,
 no commit messages, no ticket, no author. Reviewers needed intent; the judge
 must not see it (same confirmation-bias defense as Agent 4).
+
+**Handoff format: inline, not file.** Compose the judge prompt with findings
+embedded directly in the prompt body (JSON array, or NDJSON — one finding per
+line). Do NOT write findings to `/tmp/*.json` and pass the path. The disk
+round-trip is a corruption vector with no upside: one dogfood run produced a
+garbled intermediate file (lines merged mid-string in the Write output); even
+when on-disk bytes are fine, the invoking agent loses visibility into what the
+judge actually saw, which makes debugging impossible. Inline findings stay in
+the conversation log and fail loudly if malformed.
+
+For large finding sets (>200 findings or >30k tokens of payload), prefer
+NDJSON in a single code fence over a giant JSON array — each line is
+self-contained, so a truncation affects one finding rather than all.
 
 **Process (in order):**
 
@@ -533,6 +599,51 @@ From `multi-agent-code-review-reference.md`:
 | Research agents (pre-act checks) | 4 | ~2–6 min each | Prevented 2 bad fixes; 1 fix was itself wrong |
 | Round 2 audit | 5 | ~30 min | Found 2 new production risks, confirmed all fixes |
 | **Total** | **~15 agents** | **~1 hour** | **Comprehensive for 190-file diff** |
+
+---
+
+## How to iterate on this skill
+
+The playbook + skill are tuned from real dogfood runs, not from first
+principles. Evidence lives in `multi-agent-pr-review.runs.md` (append-only
+log, one section per run). When a fresh session needs to propose a change,
+it should work from the runs log, not from memory.
+
+**Before proposing any playbook/skill change, do this:**
+
+1. **Read the tail of the runs log** (most recent 3 runs minimum). A single
+   run is an anecdote; a pattern across 2+ runs is evidence.
+2. **Read §Known gaps / pending improvements** above. If the change targets
+   a gap, cite the gap number.
+3. **Check for contradicting evidence.** If an earlier run justifies the
+   rule you want to change, you need a later run showing the rule failed.
+
+**When shipping a change:**
+
+- Write the edit.
+- If the change resolves a Known gap, remove the gap item from that section
+  in the same edit.
+- If the change was driven by a specific run, the next run entry should
+  reference the edit under `### Playbook/skill changes this run produced`.
+
+**After each real run, the user debriefs by filling in the runs log entry.**
+The template is at the top of the runs log file. The single field that the
+AI cannot fill in alone is `Fix-phase outcome` — only the user knows whether
+each BLOCKING/SHOULD-FIX turned out to be a real bug or a false positive.
+Without that data, we cannot measure high-confidence precision (Gap #6) or
+calibrate severity assignment.
+
+**Red flags during iteration:**
+
+- Proposing a change based on one run. Write it in "Open questions for next
+  run" instead — let the next run confirm.
+- Tightening a rule because it "feels safer" with no run showing it failed.
+  Complexity has cost; defaults should earn their keep.
+- Removing a rule that was added from a specific run without reading what
+  that run taught us. Check the `changes this run produced` section first.
+- Editing the playbook without also updating the skill (or vice versa) when
+  the change affects invocation. Step 1/1a/1b of the skill and §Chunking /
+  §Judge Phase of the playbook must stay in sync.
 
 ---
 
