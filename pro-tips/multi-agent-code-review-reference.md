@@ -1,6 +1,6 @@
 # Multi-Agent Code Review: Reference Guide
 
-> Research compiled from official docs, blog posts, academic papers, community discussions, and installed tooling. **Last refreshed: April 17, 2026.**
+> Research compiled from official docs, blog posts, academic papers, community discussions, and installed tooling. **Last refreshed: April 17, 2026. External-sources fact-check pass: April 18, 2026.**
 >
 > Signal quality note: vendor self-reports (e.g. "<1% false positive rate") diverge sharply from independent academic benchmarks (15–31% detection, sub-20% F1). Treat unvetted vendor numbers with suspicion.
 
@@ -33,7 +33,7 @@ Six facts that matter more than everything else below.
 
 1. **The judge pattern is the signal lever — but it has documented biases.** HubSpot's 3-criteria judge drove their approval rate to 80%+ and TTFF down 90% ([product.hubspot.com](https://product.hubspot.com/blog/automated-code-review-the-6-month-evolution)). But judges inherit generator biases, prefer verbose output, favor security-framed findings, and show systematic robustness gaps on their own outputs ([arXiv 2506.09443](https://arxiv.org/abs/2506.09443): up to 40% variance across prompt templates; [arXiv 2505.16222](https://arxiv.org/abs/2505.16222) documents 6 bias types). **Use a different provider/model for the judge than the reviewers if possible.** Strip PR titles and commit messages before judging — framing effects drop vulnerability detection 16–93% ([arXiv 2603.18740](https://arxiv.org/abs/2603.18740)).
 
-2. **Sonnet-as-judge beats Opus-as-judge once input is pre-filtered.** Sonnet 4.6 (79.6% SWE-bench) vs Opus 4.6 (80.8%) — a 1.2-point gap at ~20% of the cost. Anthropic's own advisor pattern (Opus plan + Sonnet execute) cuts total cost ~11% vs all-Opus with quality gains ([MindStudio](https://www.mindstudio.ai/blog/claude-code-advisor-strategy-opus-sonnet-haiku)). Anthropic's built-in Code Review dispatches multiple Haiku agents in parallel.
+2. **Sonnet-as-judge beats Opus-as-judge once input is pre-filtered.** Sonnet 4.6 (79.6% SWE-bench) vs Opus 4.6 (80.8%) — a 1.2-point gap at ~60% of Opus per-token cost (Sonnet $3/$15 vs Opus $5/$25; both ratios are 0.6). Anthropic's own advisor pattern (Opus plan + Sonnet execute) cuts total cost ~11% vs all-Opus with quality gains ([MindStudio](https://www.mindstudio.ai/blog/claude-code-advisor-strategy-opus-sonnet-haiku)). Anthropic's built-in Code Review dispatches parallel AI agents per PR ([claude.com/blog/code-review](https://claude.com/blog/code-review)); the specific Haiku-vs-Sonnet split is not publicly documented in precise terms.
 
 3. **Prompt caching is the single biggest cost lever (up to 90% input cost reduction).** Structure every review call as `[shared system + patterns + diff][cache_control breakpoint][per-reviewer lens]`. Fire all N reviewers within 5 minutes of cache warm-up. Cache reads are 10% of base input cost; writes are 125% (5-min TTL) or 200% (1-hour) — single-shot use is net-negative.
 
@@ -194,7 +194,7 @@ Implication: do **not** feed the judge PR titles, descriptions, commit messages,
 
 - **Self-consistency** (N samples, majority vote) — standard.
 - **Multi-agent debate with adaptive stability detection** ([arXiv 2510.12697](https://arxiv.org/html/2510.12697v1)).
-- **Tournament / pairwise elimination** — used in [Agent-as-a-Judge](https://arxiv.org/html/2410.10934v2); 90% agreement with 5-human majority vote, 97% cost/time reduction vs human eval.
+- **Modular evaluation + majority voting** — used in [Agent-as-a-Judge](https://arxiv.org/html/2410.10934v2); 90% alignment with human consensus (vs LLM-as-Judge 70%); ~97.7% time and ~97.6% cost reduction vs a 3-human expert panel. (Not tournament/pairwise; the paper uses modular components + majority voting.)
 - **Ranked voting (Borda / IRV / MRR)** — [arXiv 2505.10772](https://arxiv.org/html/2505.10772v1).
 - **Embedding-similarity-to-historical-feedback** — Greptile (only production-deployed "learn from past votes" variant documented).
 
@@ -211,8 +211,8 @@ Implication: do **not** feed the judge PR titles, descriptions, commit messages,
 ### Judge model choice
 
 - Anthropic advisor strategy (Opus plan + Sonnet/Haiku execute): −11% cost, +2% benchmark vs single-Opus.
-- Sonnet 4.6 (79.6% SWE-bench) vs Opus 4.6 (80.8%) — 1.2-point gap at ~20% cost.
-- Anthropic's own Code Review dispatches **multiple Haiku agents in parallel with verification**.
+- Sonnet 4.6 (79.6% SWE-bench) vs Opus 4.6 (80.8%) — 1.2-point gap at ~60% of Opus per-token cost (further reduced by prompt caching).
+- Anthropic's own Code Review dispatches **parallel AI agents with a verification layer**; the exact model mix (Haiku vs Sonnet) is not publicly specified.
 - **Default: Sonnet-as-judge once reviewer input is pre-filtered.** Opus only if the judge must do heavy reasoning over unfiltered raw output.
 
 ### Tool-based verification (CodeRabbit pattern)
@@ -250,7 +250,7 @@ What breaks multi-agent review in practice. Design against these.
 
 **Mechanism.** Uniform severity grading; refactors and typos get the same BLOCKING label.
 
-**Evidence.** CodeAnt reports 200–400 AI comments/week, 70–90% ignored ([codeant.ai](https://www.codeant.ai/blogs/prevent-ai-code-review-overload)). LLM classifiers show up to 100% sensitivity to prompt-template and category-order changes on ambiguous inputs ([arXiv 2510.12462](https://arxiv.org/html/2510.12462v1)).
+**Evidence.** CodeAnt reports 200–400 AI comments/week, 70–90% ignored ([codeant.ai](https://www.codeant.ai/blogs/prevent-ai-code-review-overload)). LLM-as-judge robustness is brittle across prompt templates and category ordering — 11 bias types documented across pointwise-scoring judges ([arXiv 2510.12462](https://arxiv.org/html/2510.12462v1)).
 
 **Mitigation.** Risk-based routing (auth/API = deep review; docs = fast-track). Policy files encoding severity thresholds. Hard caps on specific categories (Qodo pattern).
 
@@ -270,7 +270,7 @@ What breaks multi-agent review in practice. Design against these.
 - **CVE-2025-53773** — GitHub Copilot RCE via injected comments flipping `.vscode/settings.json` to YOLO mode ([embracethered.com](https://embracethered.com/blog/posts/2025/github-copilot-remote-code-execution-via-prompt-injection/)).
 - [arXiv 2509.22040](https://arxiv.org/html/2509.22040v1) found ≥40% attack-success rates across coding editors.
 - Datadog 2025 caught "Hackerbot" injecting via PRs in OSS repos ([datadoghq.com](https://www.datadoghq.com/blog/engineering/stopping-hackerbot-claw-with-bewaire/)).
-- OWASP LLM Top 10 (2025) ranks prompt injection #1 — present in 73% of audited deployments.
+- OWASP LLM Top 10 (2025) ranks prompt injection #1. Separately, 73% of LLM deployments have at least one critical vulnerability, but only 12% of organisations test for them (OWASP / Gartner 2025 data, cited widely).
 
 **Mitigation.** Treat diff content as untrusted data, not instructions. Strip unicode control characters. Never auto-approve (Microsoft patched CVE-2025-53773 in Aug 2025 by disabling auto-approve by default). Disable autonomous mode for untrusted code. Clearly separate instruction context from data context.
 
@@ -314,7 +314,7 @@ See §2 "Confirmation bias" above — framing effects drop detection 16–93%. T
 
 ### 12. Flakiness / non-determinism
 
-**Mechanism.** Floating-point non-associativity, batched-inference load balancing, sampling. Identical input, different output. Seeds insufficient across hardware ([Thinking Machines "Defeating Nondeterminism"](https://thinkingmachines.ai/blog/defeating-nondeterminism-in-llm-inference/), [arXiv 2601.08998](https://www.arxiv.org/pdf/2601.08998)).
+**Mechanism.** Floating-point non-associativity, batched-inference load balancing, sampling. Identical input, different output. Seeds insufficient across hardware ([Thinking Machines "Defeating Nondeterminism"](https://thinkingmachines.ai/blog/defeating-nondeterminism-in-llm-inference/)). Downstream evidence: LLM-generated test flakiness is measurable ([arXiv 2601.08998](https://www.arxiv.org/pdf/2601.08998) — note this paper is about test flakiness, not inference mechanisms).
 
 **Mitigation.** Temperature 0 + seed + fixed provider. Batch-invariant kernels (Thinking Machines approach) where available. Multi-run voting on high-severity findings — if a BLOCKING doesn't reproduce across 3 runs, it's probably noise.
 
@@ -333,8 +333,7 @@ See §2 "Confirmation bias" above — framing effects drop detection 16–93%. T
 | [Augment benchmark](https://www.augmentcode.com/blog/we-benchmarked-7-ai-code-review-tools-on-real-world-prs-here-are-the-results) (50 PRs, 5 OSS repos) | Augment (best) | P / R / F | 65 / 55 / 59 |
 | Augment benchmark | Copilot (worst) | P / R / F | 20 / 34 / 25 |
 | [SWE-PRBench](https://arxiv.org/html/2603.26130v1) (350 PRs, 8 models) | Best model | Detection | 15–31%; hallucination 19–42% |
-| [SWRBench](https://arxiv.org/abs/2509.01494) (1,000 PRs, 11 models) | Frontier models baseline | F1 | Sub-20% baseline; aggregation strategy adds up to +43.67% F1 |
-| Independent user test (4 mo, 340 issues) | CodeRabbit | FP rate | ~20% (70/340) ([helpnetsecurity.com](https://www.helpnetsecurity.com/2025/12/23/coderabbit-ai-assisted-pull-requests-report/)) |
+| [SWRBench](https://arxiv.org/abs/2509.01494) (1,000 PRs, 18 models) | Frontier models baseline | F1 | Best baseline 18.73% (PR-Review); Gemini-2.5-Flash with Self-Agg (n=10) reaches 21.91% (+43.67% relative) |
 
 **Observation.** Vendor self-reports and academic benchmarks differ by an order of magnitude. Anthropic's <1% is likely measured against its own filtered output after the verifier; SWE-PRBench measures raw model detection vs ground-truth bug-fix PRs. Both are real; they're measuring different things.
 
@@ -383,7 +382,7 @@ Ranked by impact × evidence quality.
 
 ### 1. Prompt caching (highest-impact lever)
 
-**Mechanism.** Anthropic caches a prompt prefix keyed by exact token match. TTL: 5 min default, 1 hour optional (2× write premium). Min cacheable: 1024 tokens (Sonnet/Opus), 2048 (Haiku). Up to 4 cache breakpoints per request.
+**Mechanism.** Anthropic caches a prompt prefix keyed by exact token match. TTL: 5 min default, 1 hour optional (2× write premium). Min cacheable (current models, per [prompt caching docs](https://platform.claude.com/docs/en/docs/build-with-claude/prompt-caching)): 4096 tokens (Opus 4.6/4.7, Haiku 4.5), 2048 (Sonnet 4.6), 1024 (older Sonnet/Opus). Up to 4 cache breakpoints per request.
 
 **Savings.** Cache reads = 10% of base input cost; writes = 125% (5-min TTL) or 200% (1-hour). Anthropic's published figures: up to **90% input cost reduction, up to 85% latency reduction** on long prompts. For N parallel reviewers sharing a diff + system prompt, savings scale ~linearly with N.
 
@@ -1046,7 +1045,7 @@ Ordered by impact × evidence quality.
 - [SWR-Bench PR-Review (arXiv 2509.01494)](https://arxiv.org/html/2509.01494v1)
 - [Evaluating LLMs for Code Review (arXiv 2505.20206)](https://arxiv.org/html/2505.20206v1)
 - [Don't Judge Code by Its Cover — biases (arXiv 2505.16222)](https://arxiv.org/html/2505.16222v1)
-- [Confirmation bias in LLM security review (arXiv 2603.18740, USENIX)](https://arxiv.org/html/2603.18740)
+- [Confirmation bias in LLM security review (arXiv 2603.18740)](https://arxiv.org/html/2603.18740)
 - [Agent-as-a-Judge (arXiv 2410.10934)](https://arxiv.org/html/2410.10934v2)
 - [LLMs Cannot Reliably Judge Yet (arXiv 2506.09443)](https://arxiv.org/html/2506.09443v1)
 - [Multi-Agent Debate with Stability Detection (arXiv 2510.12697)](https://arxiv.org/html/2510.12697v1)

@@ -1,6 +1,7 @@
 # Multi-Agent PR Review with Judge Consolidation
 
 > Upgraded April 17, 2026 with findings from `multi-agent-code-review-reference.md`.
+> External-sources fact-check pass: April 18, 2026.
 > Same 2-round audit → judge → fix → verify shape as v1; agent roles, judge mechanics,
 > and defense layer updated with research from HubSpot Sidekick, Qodo, Greptile,
 > Anthropic Code Review, and academic work on LLM-as-judge and confirmation bias.
@@ -28,7 +29,7 @@ for diffs over 50 files.
 
 ---
 
-## Round 1 — Initial Audit (3 required + 1 optional)
+## Round 1 — Initial Audit (default: 3 agents; Agent 3 optional)
 
 Dispatched in parallel. **Fire all within a 5-min window** to hit the warm prompt
 cache (shared prefix ≈ system + AGENTS.md + compressed diff; cache reads cost 10%
@@ -38,7 +39,7 @@ a smaller base).
 
 Default roster: Agents 1, 2, 4 (required) + Agent 3 (optional, see note below).
 
-### Agent 1 — Standards & Architecture
+### Agent 1 — Standards & Architecture (`source_reviewer: standards`)
 
 Use `superpowers:code-reviewer` agent. **Receives intent context** (branch name,
 commit subjects, ticket).
@@ -50,7 +51,7 @@ commit subjects, ticket).
 
 `verification_command` **REQUIRED** per the universal mandate (see §Mandatory Instructions).
 
-### Agent 2 — Process & CI Readiness
+### Agent 2 — Process & CI Readiness (`source_reviewer: process`)
 
 Use `superpowers:requesting-code-review` skill. **Receives intent context.**
 Bash-capable.
@@ -63,7 +64,7 @@ Bash-capable.
 
 `verification_command` **REQUIRED** for every finding (test-failure findings must include the exact command that reproduces the failure).
 
-### Agent 3 — Structured PR Review (OPTIONAL)
+### Agent 3 — Structured PR Review (OPTIONAL; `source_reviewer: structured`)
 
 Use `/review-pr` skill. **Receives intent context.**
 
@@ -80,16 +81,16 @@ to Agents 1, 2, 4 as pre-context, or (b) skip entirely. Do not run it as a
 peer alongside the others — its output overlaps with the standards and
 regression lenses without adding much.
 
-### Agent 4 — Deep Regression Review
+### Agent 4 — Deep Regression Review (`source_reviewer: regression`)
 
 General-purpose agent. **Empirically the MVP across repeated use — if
 budget-limited, run this one and the judge.**
 
 **Receives compressed diff only. NO intent context.** This is the confirmation-bias
-defense: framing a diff as "bug-free" drops vulnerability detection 16–93% across
-models ([arXiv 2603.18740](https://arxiv.org/html/2603.18740); Claude 3.5 Haiku
-68%→8%). Metadata redaction + explicit de-biasing instructions recovers **94%** of
-missed detections.
+defense: framing a diff as "bug-free" drops vulnerability detection 16–93%
+across the four models tested ([arXiv 2603.18740](https://arxiv.org/html/2603.18740)).
+Metadata redaction plus explicit de-biasing instructions restores detection in
+all interactive cases and **94%** of autonomous cases.
 
 Reads AGENTS.md files, compressed diff, lockfiles, `package.json` changes.
 
@@ -121,12 +122,14 @@ Organize findings as: **BLOCKING / SHOULD-FIX / WATCH / NIT** (see §Severity De
 
 Run after all Round 1 agents complete.
 
-**Model:** Sonnet, not Opus. Sonnet 4.6 scores 80.2% on SWE-bench Verified vs
-Opus 4.6 at 86.8% — a 6.6-point gap on raw benchmark, at ~60% of Opus cost
-(Sonnet $3 / $15 per MTok input/output, Opus $5 / $25). The gap narrows on
-pre-filtered judge input; Anthropic's own Code Review dispatches Haiku
-reviewers + verifier. Opus-as-judge is overkill once input is pre-filtered,
-but the cost savings are more modest than the earlier Opus 3 pricing implied.
+**Model:** Sonnet, not Opus. Sonnet 4.6 scores 79.6% on SWE-bench Verified vs
+Opus 4.6 at 80.8% — a 1.2-point gap on raw benchmark, at ~60% of Opus per-token
+cost (Sonnet $3 / $15 vs Opus $5 / $25 input/output; both ratios are 0.6).
+Effective cost drops further with prompt caching on the shared prefix (cache
+reads = 10% of base input) and the judge's small pre-filtered input, but the
+per-token ratio is the anchor — don't claim savings the arithmetic doesn't
+support. Opus-as-judge is overkill once input is pre-filtered and reviewers
+have done the heavy lifting.
 
 **Temperature:** 0.2–0.3 (default 0.25) — low temperature for calibration
 stability. The specific point value is a pragmatic default, not an empirically
@@ -161,9 +164,9 @@ must not see it (same confirmation-bias defense as Agent 4).
    - **Cap at SHOULD-FIX** (cannot promote higher): generic error-handling or
      type-checking suggestions without a concrete failure mode
    - **Cap at WATCH**: "verify X" suggestions without a concrete claim to verify
-   - **Cap at WATCH**: finding's `existing_code` identical or near-identical to `improved_code`
-   - **DROP**: type-hint-only, docstring-only, unused-import-only, "use more
-     specific exception types"
+   - **Cap at WATCH**: finding's proposed change is cosmetic or tautological relative to the existing code (no behavior difference)
+   - **DROP** (route to `dropped` with reason `category_cap`): type-hint-only,
+     docstring-only, unused-import-only, "use more specific exception types"
 
 4. **High-confidence promotion.** If ≥2 agents independently flagged the same
    file/line with compatible messages, mark `high_confidence: true`.
@@ -180,8 +183,13 @@ must not see it (same confirmation-bias defense as Agent 4).
   "status": "findings" | "clean",
   "verdict": "Ready" | "Needs Attention" | "Needs Work",
   "summary": "one line",
-  "findings": [ /* see §Finding schema */ ],
-  "dropped": [ { "original": <finding>, "reason": "<why>" } ]
+  "findings": [ /* full finding objects per §Finding schema */ ],
+  "dropped": [
+    {
+      "original": { /* full finding object per §Finding schema */ },
+      "reason": "missing_verification_command | verification_failed | category_cap | not_succinct | not_accurate | not_actionable"
+    }
+  ]
 }
 ```
 
@@ -215,7 +223,7 @@ All Round 2 agents: `verification_command` **REQUIRED** on every finding per
 third-party behavior) is a wisdom-of-crowds feature, not a bug — each finds it
 through a different verification path.
 
-### Agent A — Auth / Security Flow Integrity
+### Agent A — Auth / Security Flow Integrity (`source_reviewer: auth`)
 
 Scope: auth-flow semantics only. Leaves SDK signature checks to C, runtime
 validity to B.
@@ -225,7 +233,7 @@ validity to B.
 - For any side effect on `process.env`, verify necessity by reading actual SDK source
 - Check cookie handling, session maintenance, redirect safety
 
-### Agent B — Runtime Correctness
+### Agent B — Runtime Correctness (`source_reviewer: runtime`)
 
 Scope: "does it actually run?" — execution-path behavior, not contracts. Leaves
 static API signature verification to C.
@@ -235,7 +243,7 @@ static API signature verification to C.
 - Schema/transform behavior changes in upgraded libs at runtime
 - `process.env` vs validated env object audit
 
-### Agent C — SDK Contract Verification
+### Agent C — SDK Contract Verification (`source_reviewer: sdk`)
 
 Scope: static contracts only — types, signatures, imports. Leaves runtime
 behavior to B.
@@ -246,14 +254,14 @@ behavior to B.
 - Check peer dependency compatibility
 - Verify TypeScript compilation passes
 
-### Agent D — Test Coverage Gap Finder
+### Agent D — Test Coverage Gap Finder (`source_reviewer: coverage`)
 
 - Run the actual test suite, report results
 - For each changed behavior, check if a test covers it
 - Identify what's NOT tested that SHOULD be
 - Check for test mocks that don't match actual behavior
 
-### Agent E — Adversarial Reviewer
+### Agent E — Adversarial Reviewer (`source_reviewer: adversarial`)
 
 **Metadata-blind.** No branch name, no commits, no ticket.
 
@@ -332,7 +340,8 @@ the judge adding:
 ```
 
 `high_confidence` is set when ≥2 agents independently flagged compatible
-messages on the same file/line (see Judge step 4). `source_reviewer` becomes
+messages on the same file/line (see §Judge Phase, step 4).
+`source_reviewer` becomes
 a `+`-joined list of the original reviewers that raised the finding.
 
 ---
@@ -363,11 +372,11 @@ shared-prefix portion.
 
 Hard protections — not optional:
 
-- **Cost cap:** `max_cost_usd` per run, default 1.50. Abort + emit partial report on trip.
-- **Wall-clock cap:** `max_wall_clock_sec` per run, default 600 (10 min).
+- **Cost cap:** `max_cost_usd` per phase, default 1.50 (caps apply per Round, not pipeline-wide — see Run envelope). Abort + emit partial report on trip.
+- **Wall-clock cap:** `max_wall_clock_sec` per phase, default 600 (10 min for Round 1; scale up for Round 2 and large diffs).
 - **Failure cap:** N consecutive tool failures per agent → halt that agent, continue others.
 - **No recursion:** agents cannot dispatch further subagents. Defends against the [$47k agent-loop case](https://earezki.com/ai-news/2026-03-23-the-ai-agent-that-cost-47000-while-everyone-thought-it-was-working/) (11 days of ping-pong, no stop condition).
-- **Read-only in audit phases:** `permissionMode: plan`, `disallowedTools: Write, Edit, NotebookEdit`.
+- **Read-only in audit phases:** `permissionMode: plan` — this is what actually enforces read-only at the permission layer. Optionally add `disallowedTools: Write, Edit, NotebookEdit` as defense-in-depth, but rely on plan mode; allow/disallow lists alone are not a substitute.
 - **Message-exchange anomaly monitor:** if inter-agent messages exceed 10/min sustained 2min, halt.
 
 ---
@@ -409,9 +418,9 @@ Hard protections — not optional:
 - **Wisdom of crowds works:** findings flagged by 2+ agents were all real → automatic high-confidence promotion at the judge.
 - **Distinct lenses find unique issues:** each agent found things others missed.
 - **Dev + review agent pattern:** cheap insurance for fix correctness.
-- **Judge phase is essential:** caught 3 severity over-classifications in one run. HubSpot independently reports 80%+ engineer approval after adding a judge. Greptile moved addressed-comment rate 19% → 55% in 2 weeks after adding an embedding-based comment filter.
+- **Judge phase is essential:** caught 3 severity over-classifications in one run; external corroboration (HubSpot, Greptile) in §Research anchors.
 - **Agent 4 (Deep Regression Review) is the MVP:** found both blockers no other agent caught. If budget-limited, run this one and the judge.
-- **Agent 3 (PR Review Guide) has weakest signal-to-noise:** consider running first and feeding its file prioritization to other agents, or replacing with a second deep-review agent.
+- **Agent 3 (Structured PR Review) has weakest signal-to-noise:** consider running first and feeding its file prioritization to other agents, or replacing with a second deep-review agent.
 - **Always verify before acting:** a "missing test" finding was a false positive (tests existed); a "wrong default type" fix was itself wrong (Zod v4 defaults bypass transforms, so the original code was correct). The `verification_command` mandate exists because of these.
 
 ### Round 2 — why it's necessary
@@ -436,18 +445,20 @@ From `multi-agent-code-review-reference.md`:
 
 - **Judge pattern is the #1 signal lever.** HubSpot Sidekick: 80%+ approval and 90% reduction in time-to-first-feedback ([HubSpot blog](https://product.hubspot.com/blog/automated-code-review-the-6-month-evolution)). Greptile: 19% → 55%+ addressed rate in 2 weeks ([ZenML case study](https://www.zenml.io/llmops-database/improving-ai-code-review-bot-comment-quality-through-vector-embeddings)). Anthropic built-in: 16% → 54% substantive reviews (internal research, unverified externally).
 - **Confirmation bias is measurable and large:** framing a diff as "bug-free" drops detection 16–93% ([arXiv 2603.18740](https://arxiv.org/html/2603.18740)). Metadata redaction + instructions recovers 94%. Hence the metadata strip for Agent 4, Agent E, and the judge.
-- **Qodo's reflect prompt** is the only fully-published production judge prompt ([github.com/The-PR-Agent/pr-agent](https://github.com/The-PR-Agent/pr-agent/blob/main/pr_agent/settings/code_suggestions/pr_code_suggestions_reflect_prompts.toml)). Hard category caps (originally 0–10 score ceilings) adapted into the BLOCKING/SHOULD-FIX/WATCH/NIT vocabulary used throughout this doc.
+- **Qodo's reflect prompt** is the only fully-published production judge prompt ([github.com/qodo-ai/pr-agent](https://github.com/qodo-ai/pr-agent/blob/main/pr_agent/settings/code_suggestions/pr_code_suggestions_reflect_prompts.toml)). Hard category caps (originally 0–10 score ceilings) adapted into the BLOCKING/SHOULD-FIX/WATCH/NIT vocabulary used throughout this doc.
 - **CodeRabbit verification pattern:** "comments come with receipts" — tool-based proof accompanying every finding. The `verification_command` requirement is derived from that.
-- **Sonnet-as-judge matches Opus-as-judge** on pre-filtered input. 1.2pt SWE-bench gap at ~20% cost.
+- **Sonnet-as-judge matches Opus-as-judge** on pre-filtered input. 1.2pt SWE-bench gap at ~60% of Opus per-token cost (further reduced by prompt caching and the judge's small pre-filtered input).
 - **Prompt caching saves up to 90%** on repeated prefix tokens. Fire reviewers within 5-min TTL.
 - **Hard cost/time caps are existential:** the [$47k agent-loop case](https://earezki.com/ai-news/2026-03-23-the-ai-agent-that-cost-47000-while-everyone-thought-it-was-working/) — 11 days of agent ping-pong, no stop condition.
-- **Martian Code Review Bench** (17 tools, 200k+ PRs, March 2026) and SWE-PRBench (350 PRs, 8 models) put frontier models at 15–31% detection and 49–60% F1 — vendor-quoted sub-1% false-positive rates don't survive independent testing. (Numbers from internal research; no public URLs collected, verify before quoting externally.)
+- **Independent benchmarks stress frontier accuracy:** SWE-PRBench (350 PRs, 8 models) reports 15–31% bug-detection across frontier models; Martian Code Review Bench (17 tools, 200k+ PRs, March 2026) reports F1 ≈50–52% for the top commercial review bots (CodeRabbit 51.2%, CodeAnt 51.7%). Vendor-quoted sub-1% false-positive rates don't survive either benchmark. See `multi-agent-code-review-reference.md` for source URLs.
 
 ### Performance data
 
+*Single run on a 190-file diff. For typical <50-file branches, scale wall-clock to the Run envelope at top of doc (~3–6 min Round 1, ~15–30 min Round 2).*
+
 | Phase | Agents | Wall-clock | Coverage |
 |-------|--------|------------|----------|
-| Round 1 audit | 4 | ~5–20 min | Found 2 blockers, 7 should-fix, 7 watch |
+| Round 1 audit | 4 (Agents 1+2+3+4; Agent 3 included in this run) | ~5–20 min | Found 2 blockers, 7 should-fix, 7 watch |
 | Judge | 1 | ~30s–2min | Filtered noise; flagged 3 over-classifications |
 | Fix phase | 2 dev + 2 review | ~5 min | All fixes verified |
 | Research agents (pre-act checks) | 4 | ~2–6 min each | Prevented 2 bad fixes; 1 fix was itself wrong |
@@ -460,7 +471,7 @@ From `multi-agent-code-review-reference.md`:
 
 - `multi-agent-code-review-reference.md` — encyclopedia with full evidence backing every choice
 - [HubSpot Sidekick evolution](https://product.hubspot.com/blog/automated-code-review-the-6-month-evolution)
-- [Qodo pr-agent reflect prompt (verbatim)](https://github.com/The-PR-Agent/pr-agent/blob/main/pr_agent/settings/code_suggestions/pr_code_suggestions_reflect_prompts.toml)
+- [Qodo pr-agent reflect prompt (verbatim)](https://github.com/qodo-ai/pr-agent/blob/main/pr_agent/settings/code_suggestions/pr_code_suggestions_reflect_prompts.toml)
 - [Greptile embedding filter case study](https://www.zenml.io/llmops-database/improving-ai-code-review-bot-comment-quality-through-vector-embeddings)
 - [Confirmation bias in LLM security review](https://arxiv.org/html/2603.18740)
 - [$47k agent-loop case](https://earezki.com/ai-news/2026-03-23-the-ai-agent-that-cost-47000-while-everyone-thought-it-was-working/)
