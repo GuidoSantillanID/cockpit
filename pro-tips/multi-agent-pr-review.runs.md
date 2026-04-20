@@ -2,19 +2,22 @@
 
 Append-only record of real runs. One section per run, newest at the bottom.
 Source of evidence for tuning the playbook and skill. See
-`multi-agent-pr-review.md` → §How to iterate on this skill.
+`multi-agent-pr-review.md` → §Iteration.
 
 **Template (copy-paste for each new run):**
 
 ```markdown
 ## Run: YYYY-MM-DD — <repo> <pr-or-branch>
 
-**Scope:** `<path_filter>` · N files · rounds: R1[+R2]
-**Agents dispatched:** standards×N, regression×N, process×N, structured×N
+**Scope:** `<path_filter>` · N files · pipeline: R1 | R1+Fix+R2 | R1+Fix+R2+Fix+R2
+**Pass type:** R1 (fresh) | R2 (post-fix) — detected via `git log --grep="address.*review.*findings"`
+**Agents dispatched:**
+  - R1: aligned×N, adversarial×N, tests×N
+  - R2: aligned×N, adversarial×N, fix_verifier×N
 **Chunked:** yes/no — why (files per chunk, or "single chunk" / "user override")
 **Verdict:** X BLOCKING, Y SHOULD-FIX, Z WATCH, W NIT · N_raw → N_kept (drop%)
-**Wall clock:** R1 ~Xmin, judge Xm Ys[, R2 ~Xmin] · total ~Xmin
-**Budget:** $X.XX (or "unmeasured — gap #N")
+**Wall clock:** R1 ~Xmin, judge Xm Ys[, Fix ~Xmin, R2 ~Xmin, judge Xm Ys] · total ~Xmin
+**Budget:** per phase from `envelope.budget_spent_usd` (R1 $X.XX, judge $X.XX, Fix $X.XX, R2 $X.XX)
 **Fix-phase outcome:** [filled in post-fix] of N BLOCKINGs, M confirmed real, K false positives
 
 ### What worked
@@ -281,17 +284,35 @@ would have found."
   flagging for under-scoped findings) is worth documenting as the
   default shape.
 
-### Pending (not yet fixed in skill/playbook)
-- Gap #3: budget accounting (no `budget_spent_usd` in envelope).
-- Gap #4: process-agent opt-in vs default.
-- Gap #5: follow-up-review detection on prior-review-commit branches
-  — R2 evidence strengthens the case for making this automatic.
-- Gap #6: HC precision validation (still one-run sample).
-- Gap #7: reviewer under-scoping — now also applies to fix agents.
-- Gap #8: Fix Phase under-specified — R2 evidence shows per-cluster
-  verification is insufficient; adversarial review after Fix Phase
-  should be the default, not optional.
-- Gap #9 (new): R2 followed the old `/tmp/*.json` handoff pattern
-  despite the new inline-handoff rule. Either session had stale
-  skill state or the rule isn't being read. Confirm on next run;
-  may need a stronger prohibition or a lint-style check.
+### Pending (not yet validated against a fresh run)
+
+Rewritten 2026-04-20 after the playbook+skill v2 rewrite. Items below
+are either open or "closed-in-theory, pending next run's evidence."
+
+**Closed by v2 rewrite — pending validation in next run:**
+- **Gap #3 (budget accounting).** Envelope now carries
+  `budget_spent_usd` per phase. Needs a run that actually populates it.
+- **Gap #4 (process agent).** Process lens removed; its one
+  high-value function (run tests) is now the `tests` agent in R1.
+- **Gap #5 (follow-up-review detection).** Superseded: R2 now runs
+  by default after every Fix Phase, regardless of prior-review-commit
+  status. Skill Step 1b detects post-fix branches via `git log --grep`
+  and swaps agent roster accordingly.
+- **Gap #7 (under-scoping).** §Mandatory rules and §Fix Phase both
+  include "grep for all instances in path_filter before reporting /
+  fixing." Needs a run that tests whether this bloats findings with
+  false matches.
+- **Gap #8 (Fix Phase under-specified).** §Fix Phase now fully spec'd:
+  parallel clusters with disjoint scope, TDD for every BLOCKING with a
+  reproducible failure mode (not just UI crashes — Run 2 evidence),
+  per-cluster + whole-app checks, under-scoping rule, third-party
+  research-before-fix, and mandatory R2 handoff.
+- **Gap #9 (inline judge-handoff rule).** Still only stated once in
+  the playbook (§Judge → Input) and skill (§Step 3). Needs a run that
+  confirms the rule is actually followed. No stronger mitigation yet;
+  if it's ignored again, escalate to a pre-dispatch check.
+
+**Open — requires more run data:**
+- **Gap #6 (HC precision).** Still a one-run sample. Need ≥2 more
+  runs with at least one false-positive BLOCKING to calibrate whether
+  `high_confidence` is more predictive than non-HC, or just a dedup tag.
