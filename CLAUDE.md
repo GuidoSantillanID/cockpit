@@ -28,6 +28,17 @@ Two kinds of files:
 
 `claude/settings.json` Stop/Notification hooks set `@claude_done 1` on the active tmux window. Two hooks in `tmux.conf` (`after-select-window`, `client-session-changed`) clear it. Both sides must stay in sync — this drives the green `●` tab indicator. Full detail in `SETUP.md`.
 
+## Writing docs with factual claims
+
+Source-first: fetch and read the primary source before writing any number,
+percentage, benchmark score, model name, or date. Cite inline at write time —
+never write a claim and look up the source later.
+
+- Every number needs a `[source](url)` in the same line, same edit.
+- If the source isn't at hand, write `[CITE]` as a placeholder and stop.
+- Never write from memory. If it feels right but you haven't checked, check first.
+- Before committing: every number in the diff has a URL next to it, or it doesn't ship.
+
 ## Verify
 
 ```bash

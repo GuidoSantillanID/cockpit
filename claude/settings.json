@@ -77,8 +77,7 @@
       "Spinning up some magic"
     ]
   },
-  "effortLevel": "high",
+  "effortLevel": "xhigh",
   "autoMemoryEnabled": false,
-  "skipDangerousModePermissionPrompt": true,
-  "model": "opus[1m]"
+  "skipDangerousModePermissionPrompt": true
 }
