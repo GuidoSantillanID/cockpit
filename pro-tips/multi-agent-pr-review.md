@@ -27,6 +27,21 @@ Most PRs need only Round 1 + judge. Run Round 2 when stakes are high (auth, dep
 upgrades, production-critical paths, large diffs). Scale caps up proportionally
 for diffs over 50 files.
 
+**Per-agent file cap.** Empirically, single agents stall on ~150-file scopes
+(stream idle > 10 min, watchdog trip at 600s). Target **≤ 50 files per agent**.
+If the diff exceeds that, split BEFORE dispatch — do not hope the agent copes:
+
+- **Preferred:** chunk by directory or feature slice (e.g., `app/api/**`,
+  `features/fine-tuning/**`). Each chunk keeps the same reviewer lens; the
+  judge merges findings across chunks by `source_reviewer`.
+- **Fallback:** chunk by file-type (routes, components, tests) when the diff
+  has no clear directory structure.
+- **Do NOT** chunk by reviewer lens alone — that's orthogonal to file count and
+  doesn't reduce any single agent's load.
+
+Record the chunking plan in the envelope under `scope` (see §Envelope schema)
+so a future reader knows what each agent actually saw.
+
 ---
 
 ## Round 1 — Initial Audit (default: 3 agents; Agent 3 optional)
@@ -173,16 +188,32 @@ must not see it (same confirmation-bias defense as Agent 4).
 
 5. **Severity assignment** per §Severity Definitions.
 
-6. **Output** — the envelope below, OR — if zero findings pass the bar —
-   `{"status": "clean", "verdict": "Ready", "summary": "clean, ship it", ...}`.
+6. **Output (JSON envelope)** — the schema below, OR — if zero findings pass
+   the bar — `{"status": "clean", "verdict": "Ready", "summary": "clean, ship it", ...}`.
    **Silence is a feature** (HubSpot: "often leaving no comments at all"
-   correlates with 80%+ engineer approval).
+   correlates with 80%+ engineer approval). The envelope is the canonical
+   artifact; step 7 below turns it into something a human can read.
 
 ```json
 {
   "status": "findings" | "clean",
   "verdict": "Ready" | "Needs Attention" | "Needs Work",
   "summary": "one line",
+  "scope": {
+    "base": "origin/main",
+    "head": "HEAD",
+    "path_filter": "components/web/**",
+    "files_changed": 148,
+    "chunks": [
+      { "agent": "standards", "paths": ["app/api/**"], "files": 42 },
+      { "agent": "regression", "paths": ["features/**"], "files": 61 }
+    ]
+  },
+  "rounds_run": ["R1"] | ["R1", "R2"],
+  "skipped_agents": [
+    { "agent": "A (auth)", "reason": "no auth/session/middleware changes in diff" },
+    { "agent": "D (CI)", "reason": "Agent 2 already ran tests clean; no duplicate needed" }
+  ],
   "findings": [ /* full finding objects per §Finding schema */ ],
   "dropped": [
     {
@@ -192,6 +223,42 @@ must not see it (same confirmation-bias defense as Agent 4).
   ]
 }
 ```
+
+`scope`, `rounds_run`, and `skipped_agents` are mandatory when non-default.
+They make the envelope self-describing so a future reader (or the Fix Phase
+agents) can tell what was actually audited vs. assumed-safe.
+
+7. **Human-readable rendering.** The JSON envelope is the canonical artifact
+   (consumed by Fix Phase dev/review agents, programmatic filtering, dedup).
+   It is **not** the primary deliverable to the human reviewer — raw JSON is
+   noise to read. After emitting the envelope, render a short markdown summary
+   for the user, alongside the JSON:
+
+   ```markdown
+   **Verdict:** Needs Work — 2 BLOCKING, 5 SHOULD-FIX, 3 WATCH, 1 NIT
+   **Scope:** components/web/** (148 files, 2 chunks) · R1+R2 · skipped: A, D
+
+   ### BLOCKING
+   - `app/api/fine-tuning/runs/route.ts:19` — case-sensitive keyword search regression (`high_confidence`, regression+sdk)
+   - `app/api/fine-tuning/upload/route.ts:7` — no null guard on jobId/uploadId (`high_confidence`, runtime+sdk+adversarial)
+
+   ### SHOULD-FIX
+   - `app/api/fine-tuning/complete-upload/route.ts:23` — catch returns implicit HTTP 200 on failure
+   - ...
+
+   ### Dropped (11)
+   2 verification_failed BLOCKINGs, 4 category_cap, 5 not_actionable — see JSON for details.
+   ```
+
+   Rules for the markdown:
+   - One line per finding: `` `file:line` — one-sentence message (tags) ``
+   - Group by severity descending; omit empty sections
+   - Tags: `high_confidence`, `source_reviewer` values (comma-separated)
+   - Dropped findings: summarize by reason count, don't list individually
+   - Keep under ~40 lines for a typical PR — scannable in one screen
+
+   The JSON envelope stays in the response (collapsed or below the markdown)
+   so Fix Phase agents and future automation still have the structured form.
 
 ---
 
