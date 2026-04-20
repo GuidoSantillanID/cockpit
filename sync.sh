@@ -18,6 +18,7 @@ copy_if_exists() {
     echo "  skipped $dest (symlink already points to cockpit)"
     return
   fi
+  mkdir -p "$(dirname "$dest")"
   cp "$src" "$dest"
   echo "  updated $dest"
 }
@@ -41,6 +42,7 @@ copy_if_exists "$HOME/.claude/CLAUDE.md"                             "$REPO_DIR/
 copy_if_exists "$HOME/.claude/skills/commit/SKILL.md"               "$REPO_DIR/claude/skills/commit/SKILL.md"
 copy_if_exists "$HOME/.claude/skills/p/SKILL.md"                    "$REPO_DIR/claude/skills/p/SKILL.md"
 copy_if_exists "$HOME/.claude/skills/review-pr/SKILL.md"            "$REPO_DIR/claude/skills/review-pr/SKILL.md"
+copy_if_exists "$HOME/.claude/skills/review-multi-agent/SKILL.md"   "$REPO_DIR/claude/skills/review-multi-agent/SKILL.md"
 copy_if_exists "$HOME/.claude/skills/test-pr/SKILL.md"              "$REPO_DIR/claude/skills/test-pr/SKILL.md"
 copy_if_exists "$HOME/.claude/skills/update-docs/SKILL.md"          "$REPO_DIR/claude/skills/update-docs/SKILL.md"
 copy_if_exists "$HOME/.claude/skills/update-pr-description/SKILL.md" "$REPO_DIR/claude/skills/update-pr-description/SKILL.md"

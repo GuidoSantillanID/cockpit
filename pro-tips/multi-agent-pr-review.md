@@ -27,9 +27,11 @@ Most PRs need only Round 1 + judge. Run Round 2 when stakes are high (auth, dep
 upgrades, production-critical paths, large diffs). Scale caps up proportionally
 for diffs over 50 files.
 
-**Per-agent file cap.** Empirically, single agents stall on ~150-file scopes
-(stream idle > 10 min, watchdog trip at 600s). Target **≤ 50 files per agent**.
-If the diff exceeds that, split BEFORE dispatch — do not hope the agent copes:
+**Per-agent file cap (rule of thumb).** Target **≤ 50 files per agent**. The
+600s no-progress watchdog and ~10-min stream-idle ceiling are real limits; a
+reviewer working through a very large diff is more likely to bump into them,
+and a stall mid-review wastes the entire agent's budget. Split BEFORE dispatch
+rather than hoping the agent copes:
 
 - **Preferred:** chunk by directory or feature slice (e.g., `app/api/**`,
   `features/fine-tuning/**`). Each chunk keeps the same reviewer lens; the
