@@ -441,4 +441,10 @@ and severity accuracy.
 - `multi-agent-pr-review.runs.md` — append-only run log
 - `multi-agent-code-review-reference.md` — full research backing
   (judge biases, confirmation-bias study, Qodo reflect-prompt, Sonnet
-  vs Opus pricing, prompt-caching mechanics, failure modes)
+  vs Opus pricing, prompt-caching mechanics, failure modes). Citations
+  verified via WebFetch where possible — see each section's caveats for
+  claims that couldn't be automatically confirmed.
+- `golden-set/` — regression-test fixtures with known bugs. Run
+  `./golden-set/run.sh <fixture>` to set up a throwaway repo, then
+  invoke this skill against it and compare findings to `expected.json`.
+  Use this on every playbook change to catch drift empirically.

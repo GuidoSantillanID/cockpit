@@ -1,0 +1,10 @@
+diff --git a/searchRuns.ts b/searchRuns.ts
+--- a/searchRuns.ts
++++ b/searchRuns.ts
+@@ -7,5 +7,4 @@
+ export function searchRuns(query: string, runs: Run[]): Run[] {
+   if (!query) return runs;
+-  const q = query.toLowerCase();
+-  return runs.filter(r => r.name.toLowerCase().includes(q));
++  return runs.filter(r => r.name.includes(query));
+ }

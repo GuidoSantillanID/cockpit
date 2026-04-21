@@ -1,0 +1,21 @@
+{
+  "description": "Case-sensitive string comparison regression: PR removes .toLowerCase() on both the query and the target, breaking case-insensitive search semantics.",
+  "minimum_findings": [
+    {
+      "severity": "BLOCKING",
+      "category": "regression",
+      "file_regex": "searchRuns\\.ts",
+      "line_regex": "name\\.includes\\(query\\)",
+      "message_keywords": [
+        "case-sensitive",
+        "case-insensitive",
+        "case sensitivity",
+        "lowercase",
+        "toLowerCase"
+      ],
+      "notes": "Pipeline must flag that the search became case-sensitive. The removed .toLowerCase() on both operands is the regression vector. Either reviewer lens (aligned or adversarial) should catch this; high-confidence promotion is expected when both do."
+    }
+  ],
+  "acceptable_false_positives": 1,
+  "notes": "Synthetic reproduction of Run 1 (2026-04-19, GP-1167) BLOCKING at app/api/fine-tuning/runs/route.ts:19. This is a baseline sanity-check fixture — any reasonably competent reviewer should catch it. If this fixture stops passing, the pipeline is fundamentally broken, not drifting at the margins."
+}
