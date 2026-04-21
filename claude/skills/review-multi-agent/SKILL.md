@@ -104,8 +104,12 @@ cache). Agent-type mapping per playbook §R1 and §R2:
   for fix-induced regressions and R1 recall gaps.
 - **fix_verifier** → general-purpose. Receives the R1 findings list +
   post-fix diff (explicit exception to R2's clean-context rule).
-  For each R1 finding, confirms: fix was applied, addresses root
-  cause, introduced no new issues in the fix's scope.
+  **Commit subjects withheld** — same bias hygiene as R2 aligned
+  (post-fix commits frame the diff as "bugs already fixed"). For each
+  R1 finding, confirms: fix was applied, addresses root cause,
+  introduced no new issues in the fix's scope, AND **scope is complete**
+  (if the finding was a pattern, every grep-match in `path_filter` was
+  fixed — see playbook §R2 agent 3).
 
 Every finding MUST include `verification_command` — the judge drops
 findings missing it.
@@ -116,7 +120,10 @@ partial output from a stalled or paused-then-resumed agent.
 
 ## Step 3: Judge
 
-Sonnet, temperature 0.25, metadata-stripped input (no branch/commit/ticket).
+Sonnet, temperature 0.25. Input: metadata-stripped (no branch/commit/ticket)
+PLUS a one-sentence de-biasing line stating the diff has not been pre-vetted
+and every claim must be proven by its `verification_command`. Redaction +
+de-biasing are additive — see playbook §Judge → Input.
 
 **Handoff format: inline.** Embed findings directly in the judge prompt
 body as JSON (or NDJSON for >200 findings). **Never** write findings
@@ -157,10 +164,11 @@ Present in this order:
 - Do NOT dispatch before emitting the pre-flight checklist.
 - Do NOT skip the pass-type detection (Step 1b) — wrong roster wastes
   a run.
-- Do NOT strip metadata from the R1 aligned, tests, or fix_verifier
-  agents — they need intent. R2 aligned gets branch name + AGENTS.md
-  but NOT commit subjects (bias hygiene). Adversarial and the judge
-  are fully metadata-stripped in both passes.
+- Do NOT strip metadata from the R1 aligned or tests agents — they
+  need intent. R2 aligned AND fix_verifier withhold commit subjects
+  (bias hygiene — post-fix commits frame the diff as "bugs already
+  fixed"). Adversarial and the judge are fully metadata-stripped in
+  both passes.
 - Do NOT trust findings without `verification_command` — the judge
   runs them.
 - Do NOT chunk by reviewer lens alone. Chunk by directory/feature if

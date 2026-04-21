@@ -113,6 +113,16 @@ Run after all R1 agents complete.
   fail loudly if malformed and stay in the conversation log.
 - **Metadata strip:** judge sees NO branch name, NO commits, NO ticket,
   NO author (same confirmation-bias defense as the Adversarial reviewer).
+- **De-biasing line:** judge prompt must include a short statement that
+  the diff has not been pre-vetted and every finding's claim must be
+  proven by its `verification_command`, not assumed correct. Metadata
+  redaction and de-biasing are additive interventions, not either/or
+  ([arXiv 2603.18740](https://arxiv.org/html/2603.18740) — the 94%
+  detection recovery reported requires both together; denominators
+  differ slightly between conditions, so treat the gap as "redaction +
+  de-biasing recovers more than redaction alone," not a precise 68/94
+  split). Keep the line to one sentence — longer prompts introduce
+  verbosity-bias.
 
 ### Process
 
@@ -274,12 +284,20 @@ Same two lenses as R1 + one agent with R1-findings context.
    Catches regressions introduced by the fix, plus R1 recall gaps.
 
 3. **Fix verifier** (`source_reviewer: fix_verifier`) — receives the
-   R1 judge's findings list AND the post-fix diff. For each R1
+   R1 judge's findings list AND the post-fix diff. **Commit subjects
+   withheld** — same rationale as aligned: post-fix commits like
+   "address review findings" frame the diff as "bugs already fixed"
+   and bias the verifier toward sycophantic agreement. For each R1
    finding, confirms:
    - The fix was applied
    - It addresses the root cause (not just the symptom)
    - No new issues in the fix's scope (no half-done sentinel fixes,
      no directionally-correct-but-incomplete patches)
+   - **Scope is complete.** If the R1 finding flagged a pattern, the
+     fix covered every grep-match of that pattern in `path_filter`,
+     not just the named files. Run 2 evidence: `stageModelAction` fix
+     was "directionally correct but incomplete" — callsites changed,
+     root cause in `lib/utils/safe-action.ts` missed.
 
 Each agent emits findings into a fresh judge pass (same §Judge process).
 

@@ -31,15 +31,15 @@
 
 Six facts that matter more than everything else below.
 
-1. **The judge pattern is the signal lever — but it has documented biases.** HubSpot's 3-criteria judge drove their approval rate to 80%+ and TTFF down 90% ([product.hubspot.com](https://product.hubspot.com/blog/automated-code-review-the-6-month-evolution)). But judges inherit generator biases, prefer verbose output, favor security-framed findings, and show systematic robustness gaps on their own outputs ([arXiv 2506.09443](https://arxiv.org/abs/2506.09443): up to 40% variance across prompt templates; [arXiv 2505.16222](https://arxiv.org/abs/2505.16222) documents 6 bias types). **Use a different provider/model for the judge than the reviewers if possible.** Strip PR titles and commit messages before judging — framing effects drop vulnerability detection 16–93% ([arXiv 2603.18740](https://arxiv.org/abs/2603.18740)).
+1. **The judge pattern is the signal lever — but it has documented biases.** HubSpot's 3-criteria judge drove their approval rate to 80%+ and TTFF down 90% ([product.hubspot.com](https://product.hubspot.com/blog/automated-code-review-the-6-month-evolution)). But judges inherit generator biases, prefer verbose output, favor security-framed findings, and show systematic robustness gaps on their own outputs ([arXiv 2506.09443](https://arxiv.org/abs/2506.09443): up to 40% variance across prompt templates — benchmarked on translation, summarization, math, and coding-adjacent tasks, not code-review specifically; [arXiv 2505.16222](https://arxiv.org/abs/2505.16222) documents 6 bias types). **Use a different provider/model for the judge than the reviewers if possible.** Strip PR titles and commit messages before judging — framing effects drop vulnerability detection 16–93% ([arXiv 2603.18740](https://arxiv.org/abs/2603.18740)).
 
 2. **Sonnet-as-judge beats Opus-as-judge once input is pre-filtered.** Sonnet 4.6 (79.6% SWE-bench) vs Opus 4.6 (80.8%) — a 1.2-point gap at ~60% of Opus per-token cost (Sonnet $3/$15 vs Opus $5/$25; both ratios are 0.6). Anthropic's own advisor pattern (Opus plan + Sonnet execute) cuts total cost ~11% vs all-Opus with quality gains ([MindStudio](https://www.mindstudio.ai/blog/claude-code-advisor-strategy-opus-sonnet-haiku)). Anthropic's built-in Code Review dispatches parallel AI agents per PR ([claude.com/blog/code-review](https://claude.com/blog/code-review)); the specific Haiku-vs-Sonnet split is not publicly documented in precise terms.
 
-3. **Prompt caching is the single biggest cost lever (up to 90% input cost reduction).** Structure every review call as `[shared system + patterns + diff][cache_control breakpoint][per-reviewer lens]`. Fire all N reviewers within 5 minutes of cache warm-up. Cache reads are 10% of base input cost; writes are 125% (5-min TTL) or 200% (1-hour) — single-shot use is net-negative.
+3. **Prompt caching is the single biggest cost lever.** Cache reads are 10% of base input price ([Anthropic docs, verbatim](https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching)) — i.e. up to ~90% savings on cached content (derived from the 10% read price, not a figure directly quoted in Anthropic's docs). Structure every review call as `[shared system + patterns + diff][cache_control breakpoint][per-reviewer lens]`. Fire all N reviewers within 5 minutes of cache warm-up. Writes are 125% (5-min TTL) or 200% (1-hour) — single-shot use is net-negative.
 
-4. **Multi-agent review has documented catastrophic failure modes.** A $47,000 invoice came from two agents exchanging messages for 11 days while everyone assumed they were working ([earezki.com case study](https://earezki.com/ai-news/2026-03-23-the-ai-agent-that-cost-47000-while-everyone-thought-it-was-working/)). CVE-2025-53773 was a Copilot RCE via prompt-injected comments flipping settings to YOLO mode ([embracethered.com](https://embracethered.com/blog/posts/2025/github-copilot-remote-code-execution-via-prompt-injection/)). Hard per-run token budgets and circuit breakers are not optional.
+4. **Multi-agent review has documented catastrophic failure modes.** A widely-circulated case reports a $47,000 invoice from two agents exchanging messages for 11 days with no progress ([earezki.com case study](https://earezki.com/ai-news/2026-03-23-the-ai-agent-that-cost-47000-while-everyone-thought-it-was-working/) — primary source returned 403 to automated fetch; claim cited widely but not independently WebFetch-verified here). CVE-2025-53773 was a Copilot RCE via prompt-injected comments flipping settings to YOLO mode ([embracethered.com](https://embracethered.com/blog/posts/2025/github-copilot-remote-code-execution-via-prompt-injection/)). Hard per-run token budgets and circuit breakers are not optional.
 
-5. **Vendor numbers disagree with independent benchmarks by an order of magnitude.** Anthropic reports <1% false positive rate internally; Martian Code Review Bench (17 tools, 200k+ PRs, March 2026) measured CodeRabbit at 49.2% precision / 51.2% F1 ([codereview.withmartian.com](https://codereview.withmartian.com/)); Qodo self-reports 60.1% F1 on their own benchmark; SWE-PRBench across 8 frontier models shows 15–31% detection, 19–42% hallucination. Don't take vendor marketing as a planning input.
+5. **Vendor numbers disagree with independent benchmarks by an order of magnitude.** Anthropic reports <1% false positive rate internally; Martian Code Review Bench (17 tools, 200k+ PRs, March 2026 — per site self-report; site is JS-rendered, WebFetch returned title only, so specific numbers below are not independently verifiable — screenshot or secondary-source check recommended) measured CodeRabbit at 49.2% precision / 51.2% F1 ([codereview.withmartian.com](https://codereview.withmartian.com/)); Qodo self-reports 60.1% F1 on their own benchmark; SWE-PRBench across 8 frontier models shows 15–31% detection and 19–42% FPR (paper calls it FPR / fabrication rate, not "hallucination"). Don't take vendor marketing as a planning input.
 
 6. **Grep is not proof of absence.** Symlinks, pnpm content-addressed store, compiled/transpiled output, TS path aliases, dynamic imports, reflection, and interface dispatch all hide code from grep. Require adversarial agents to READ the actual installed file at the expected path. Cross-verify any "X doesn't exist" claim with a second tool (call-graph analysis, AST walk).
 
@@ -51,7 +51,7 @@ Six facts that matter more than everything else below.
 
 Shipped March 9, 2026 ([TechCrunch](https://techcrunch.com/2026/03/09/anthropic-launches-code-review-tool-to-check-flood-of-ai-generated-code/), [claude.com/blog/code-review](https://claude.com/blog/code-review)).
 
-- **Multi-agent team** dispatches in parallel, each agent scoped to a single issue class: logic errors, boundary conditions, API misuse, auth flaws, convention violations.
+- **Multi-agent team** dispatches in parallel. The blog describes the shape verbatim as: "look for bugs in parallel, verify bugs to filter out false positives, and rank bugs by severity." Specific issue classes (logic errors, boundary conditions, API misuse, auth flaws, convention violations) are downstream inference about what such agents plausibly specialize on — not enumerated in the source.
 - **Verification layer** filters false positives before posting — <1% of findings dismissed as incorrect per Anthropic's internal measurement. External benchmarks do not confirm this number.
 - **Scaling behavior**: larger PRs get more agents dispatched. 84% of PRs over 1,000 lines now get findings. Average 7.5 issues on 1,000+ LOC PRs.
 - **Before/after**: 16% → 54% of PRs receive substantive review comments.
@@ -170,7 +170,8 @@ From [arXiv 2505.16222 "Don't Judge Code by Its Cover"](https://arxiv.org/html/2
 | Self-declared correctness | +5.3 to +7.8 pp (up to −24.7pp on LLaMA-3.1-70B) |
 | Misleading task descriptions | GPT-4o accuracy −26.7pp; mean abs deviation 15.3pp |
 | Illusory complexity (longer names, more code) | Higher scores regardless of quality |
-| Structural verbosity bias | Long walkthroughs rated higher than concise summaries (inverse of human preference) |
+| Variable Change bias | Renames and surface edits shift scores despite identical behavior |
+| Reverse Authority bias | Inverse of Authority — amateur/non-expert framing deflates scores |
 
 **Scale does not cure it** — bigger models show the same patterns.
 
@@ -302,7 +303,7 @@ See §2 "Confirmation bias" above — framing effects drop detection 16–93%. T
 
 **Mechanism.** Recursive agent-to-agent loops, no checkpointing, self-healing restart storms.
 
-**Evidence.** [Kusireddy case](https://earezki.com/ai-news/2026-03-23-the-ai-agent-that-cost-47000-while-everyone-thought-it-was-working/): **$47,000 invoice** from two agents exchanging messages for 11 days while everyone assumed they were working. Other reports: $47 on a single $0.80 pipeline run; $700 in 72h from 22 auto-restarts without checkpoint.
+**Evidence** (caveat: earezki primary source returned 403 to automated fetch; the $47k figure is cited widely but not WebFetch-verified here; the secondary figures below also lack directly-verifiable primary sources and should be treated as illustrative, not authoritative). [Kusireddy case](https://earezki.com/ai-news/2026-03-23-the-ai-agent-that-cost-47000-while-everyone-thought-it-was-working/): **$47,000 invoice** from two agents exchanging messages for 11 days with no progress. Other reports: $47 on a single $0.80 pipeline run; $700 in 72h from 22 auto-restarts without checkpoint.
 
 **Mitigation.** Circuit breakers tripping after N consecutive tool failures. Hard per-run token/$ budgets. Observability on message-exchange rate (not just API success). For `/double-check`: set `max_cost_usd` and `max_wall_clock_sec`, abort on trip.
 
@@ -327,8 +328,10 @@ See §2 "Confirmation bias" above — framing effects drop detection 16–93%. T
 | Source | Config | Metric | Value |
 |---|---|---|---|
 | Anthropic internal ([blog](https://claude.com/blog/code-review)) | Multi-agent + verifier | FP rate | <1% |
-| [Martian Code Review Bench](https://codereview.withmartian.com/) (17 tools, 200k+ PRs, released March 2026) | CodeRabbit | Precision / Recall / F1 | 49.2% / ~54% / 51.2% |
-| Martian | CodeAnt AI | F1 | 51.7% (#3) |
+| [Martian Code Review Bench](https://codereview.withmartian.com/) (17 tools, 200k+ PRs, released March 2026)† | CodeRabbit | Precision / Recall / F1 | 49.2% / ~54% / 51.2% |
+| Martian† | CodeAnt AI | F1 | 51.7% (#3) |
+
+† Martian's site is JS-rendered; WebFetch returned only the page title. Specific numbers above are from the site's own leaderboard self-report and could not be independently verified via automated fetch. Treat as vendor-bench-published-by-site, not as independently-audited numbers. Screenshot or secondary-source confirmation recommended before citing.
 | Qodo own benchmark (580 defects / 100 PRs) | Qodo 2.0 | Precision / Recall / F1 | — / 56.7% / 60.1% |
 | [Augment benchmark](https://www.augmentcode.com/blog/we-benchmarked-7-ai-code-review-tools-on-real-world-prs-here-are-the-results) (50 PRs, 5 OSS repos) | Augment (best) | P / R / F | 65 / 55 / 59 |
 | Augment benchmark | Copilot (worst) | P / R / F | 20 / 34 / 25 |
@@ -382,9 +385,9 @@ Ranked by impact × evidence quality.
 
 ### 1. Prompt caching (highest-impact lever)
 
-**Mechanism.** Anthropic caches a prompt prefix keyed by exact token match. TTL: 5 min default, 1 hour optional (2× write premium). Min cacheable (current models, per [prompt caching docs](https://platform.claude.com/docs/en/docs/build-with-claude/prompt-caching)): 4096 tokens (Opus 4.6/4.7, Haiku 4.5), 2048 (Sonnet 4.6), 1024 (older Sonnet/Opus). Up to 4 cache breakpoints per request.
+**Mechanism.** Anthropic caches a prompt prefix keyed by exact token match. TTL: 5 min default, 1 hour optional (2× write premium). Min cacheable (current models, per [prompt caching docs](https://platform.claude.com/docs/en/docs/build-with-claude/prompt-caching)): 4096 tokens (Opus 4.7/4.6/4.5, Haiku 4.5), 2048 (Sonnet 4.6, Haiku 3.5), 1024 (older Sonnet/Opus). Up to 4 cache breakpoints per request.
 
-**Savings.** Cache reads = 10% of base input cost; writes = 125% (5-min TTL) or 200% (1-hour). Anthropic's published figures: up to **90% input cost reduction, up to 85% latency reduction** on long prompts. For N parallel reviewers sharing a diff + system prompt, savings scale ~linearly with N.
+**Savings.** Cache reads = 10% of base input cost; writes = 125% (5-min TTL) or 200% (1-hour) — these three ratios are verbatim from Anthropic's docs. The commonly-cited **"up to 90% input cost reduction"** is derived from the 10% read price, not quoted in the docs. Anthropic also publishes latency-reduction numbers on long prompts, but specific figures shift across doc revisions — check the current docs rather than citing a fixed percentage. For N parallel reviewers sharing a diff + system prompt, savings scale ~linearly with N.
 
 **Implementation.** Order prefix as: `[static system + AGENTS.md + patterns + diff] → [per-reviewer lens + task]`. Set `cache_control` on the last block of the shared prefix. Fire all N reviewers within 5 min of the first (which warms the cache).
 
