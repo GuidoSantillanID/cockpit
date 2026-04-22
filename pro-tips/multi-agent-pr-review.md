@@ -153,9 +153,10 @@ Run after all R1 agents complete.
 
 5. **Severity assignment** per §Severity.
 
-6. **Output** — JSON envelope (below) + human-readable markdown
-   summary. If nothing passes: emit `{"status":"clean"}` and a one-line
-   markdown verdict. **Silence is valid output.**
+6. **Output** — JSON envelope (below) is internal state for Fix Phase
+   hand-off. **Not rendered to the user.** Human-readable markdown
+   summary is the only user-facing output. If nothing passes: emit a
+   one-line markdown verdict. **Silence is valid output.**
 
 ### Envelope
 
@@ -185,8 +186,10 @@ Run after all R1 agents complete.
 
 ### Markdown summary
 
-Render after the envelope. This is what the human reads; the envelope
-is for Fix Phase and programmatic use.
+Render the markdown in place of the envelope. This is the only output
+the user sees; the envelope stays in session context for Fix Phase
+dev-agent prompts. Do not render the envelope in the chat, do not
+persist it to disk — Run 3 evidence.
 
 ```
 **Verdict:** Needs Work — 2 BLOCKING, 5 SHOULD-FIX, 3 WATCH, 1 NIT

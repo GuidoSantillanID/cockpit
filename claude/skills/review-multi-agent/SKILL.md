@@ -56,11 +56,17 @@ git log --grep="address.*review.*findings" --grep="multi-agent.*review" -i --one
 
 - **No match → R1 pass** (fresh audit). Agent roster: aligned +
   adversarial + tests.
-- **Match found → R2 pass** (audit the fixes). Agent roster: aligned +
-  adversarial + fix_verifier. The fix_verifier needs the R1 findings —
-  if not available, ask the user for the R1 envelope (JSON) or the
-  markdown summary. Without it, fix_verifier degrades to a second
-  adversarial agent.
+- **Match found + R1 envelope provided by the user** (pasted into the
+  invocation, or attached as an argument) → **R2 pass** (audit the
+  fixes). Agent roster: aligned + adversarial + fix_verifier.
+  fix_verifier receives the R1 findings.
+- **Match found + no R1 envelope provided → R1 pass** (default, no
+  block). Run 3 evidence: the commit-grep signal alone does NOT
+  justify R2. Without actual R1 findings, fix_verifier has nothing to
+  verify and degrades to a second adversarial agent — worse than a
+  clean R1 roster. Do not ask a blocking question; run R1. If the
+  user explicitly wants R2 on a post-fix branch without R1 findings at
+  hand, they say so and accept the degradation.
 
 ### 1c. Resolve the checklist
 
@@ -147,17 +153,24 @@ Follow playbook §Judge steps 1–6:
 
 Present in this order:
 
-1. **Markdown summary first** — grouped by severity descending, one
-   line per finding: `` `file:line` — one-sentence message (tags) ``.
-   Tags: `HC` for `high_confidence`, plus `source_reviewer` values.
-2. **JSON envelope second**, in a fenced code block for Fix Phase
-   agents and future automation.
-3. **Next-step suggestion:**
+1. **Markdown summary** — grouped by severity descending, one line per
+   finding: `` `file:line` — one-sentence message (tags) ``. Tags: `HC`
+   for `high_confidence`, plus `source_reviewer` values. This is the
+   only user-facing output.
+2. **Next-step suggestion:**
    - **R1 pass with findings:** recommend Fix Phase (parallel clusters,
      TDD, per playbook §Fix Phase), then re-invoke this skill for R2.
    - **R2 pass with findings:** recommend another Fix Phase cycle.
    - **Clean verdict (either pass):** one confirming sentence, stop.
      Silence is a feature.
+
+**The JSON envelope (per playbook §Judge → Envelope) is internal
+state.** It is NOT rendered to the chat. Dev agents dispatched into
+Fix Phase receive it via their prompt context; the user sees only the
+markdown. Do not persist the envelope to disk (`.reviews/`,
+`/tmp/*.json`, etc. — Run 3 evidence; the envelope dies with the
+session, and R2 re-invocations pick up R1 findings via user paste-back
+only).
 
 ## What NOT to do
 
@@ -176,6 +189,12 @@ Present in this order:
 - Do NOT accept partial output from a stalled or paused-then-resumed
   agent — re-dispatch with narrower scope.
 - Do NOT skip the markdown rendering — raw JSON alone is noise.
+- Do NOT render the JSON envelope in the chat. It is internal state
+  for Fix Phase hand-off only. Markdown is the ship format (Run 3
+  evidence: ~300 lines of JSON after the markdown table is unreadable
+  and duplicates every finding verbatim).
+- Do NOT persist the envelope to disk. No `.reviews/`, no `/tmp/*.json`.
+  R2 invocations rely on user paste-back, not a cached file.
 - Do NOT run Fix Phase from inside this skill. Fix Phase is a separate
   orchestration (parallel dev clusters with write access); this skill
   is audit-only (`permissionMode: plan`).

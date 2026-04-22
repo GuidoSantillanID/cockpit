@@ -316,3 +316,105 @@ are either open or "closed-in-theory, pending next run's evidence."
 - **Gap #6 (HC precision).** Still a one-run sample. Need ≥2 more
   runs with at least one false-positive BLOCKING to calibrate whether
   `high_confidence` is more predictive than non-HC, or just a dedup tag.
+
+**Reopened by Run 3:**
+- **Gap #5 (follow-up-review detection).** v2 claimed this was
+  superseded ("R2 runs by default after every Fix Phase"). Run 3
+  exposed a gap in the fall-through logic: commit-grep match without
+  an R1 envelope should default to R1, not R2. Detection itself is
+  fine; the default picked from the detection was wrong. Fixed in
+  Skill Step 1b via Run 3's edit (three-way branch: match+envelope →
+  R2; match+no-envelope → R1; no-match → R1). Needs a run where the
+  user actually hands over an R1 envelope to confirm the R2 branch
+  still fires cleanly.
+
+---
+
+## Run: 2026-04-22 — genomics-product GP-1167 (third dogfood, post-v2 skill)
+
+**Scope:** `components/web/**` · 266 files · pipeline: R1 only
+(Fix Phase + R2 pending user)
+**Pass type:** R1 (fresh) — but Step 1b initially picked R2 on
+`git log --grep` match of two prior review-fix commits (bab08177d,
+b6eabee49). Safeguard blocked on missing R1 envelope; user overrode
+manually ("do r1 and then r2. is the skill not clear on that?").
+**Agents dispatched:** R1: aligned×1, adversarial×1, tests×1 (default
+roster)
+**Chunked:** no — 266 files in a single cohesive component, no prior
+stall on this diff, user did not override
+**Verdict:** 3 BLOCKING, 7 SHOULD-FIX, 5 WATCH, 4 NIT · 26 raw
+(aligned 13 + adversarial 13 + tests 0) → 19 kept + 3 dropped (HC
+dedup collapsed the balance)
+**Wall clock:** R1 ~2 min (dispatch to last-agent complete), judge
+2m47s, total ~5 min
+**Budget:** `budget_spent_usd` fields returned null — Gap #3 still
+open (no wiring)
+**Fix-phase outcome:** pending — user has not run Fix Phase yet
+
+### What worked
+- R1 roster dispatched cleanly within the 5-min cache window; all
+  three agents returned within ~2 min.
+- 3 BLOCKINGs are all real regressions from one upstream change
+  (api-client now throws on non-OK response): use-get-logs endpoint
+  swap → 404, upload-form validation-message swallowing, cookbook
+  edit-guide page crash. Adversarial lens caught all three; aligned
+  missed them because the refactor itself was intent-consistent —
+  bugs live in the blast radius of a "reasonable" change, which is
+  exactly where adversarial lens earns its keep.
+- HC promotion still working: `RUN_STATUS.Created = 0` truthy-drop in
+  SignalR handler flagged by aligned + adversarial independently.
+  Pre-existing, preserved through the cache-updater extraction.
+- Markdown summary was scannable at a glance: severity groups,
+  `file:line`, one-sentence message, HC tag.
+- Tests agent was a ~30s no-op (suite passing on the branch) and
+  completed first — the roster isn't expensive when empty.
+
+### What didn't
+- **Pass-type detection over-committed to R2 without R1 findings.**
+  Step 1b matched two prior review-fix commits → picked R2 roster →
+  then blocked asking for R1 envelope. The block was a correct
+  safeguard, but the pick itself was wrong: without R1 findings in
+  hand, fix_verifier has nothing to verify (degrades to a second
+  adversarial agent, which is worse than a clean R1 roster). User
+  had to manually override — exactly the friction the pre-flight
+  was supposed to eliminate.
+- **JSON envelope dumped to user-facing output.** Step 4 said
+  "markdown first, JSON second in a fenced code block for Fix Phase
+  agents and future automation." In practice: ~300 lines of JSON
+  duplicating every finding after a clean 20-line markdown table.
+  User cannot act on the JSON; Fix Phase dev agents get the envelope
+  via in-session prompt context, not the chat transcript. The
+  argument "for future automation" didn't survive contact with a
+  user who just wants the table.
+- Budget still unmeasured. `budget_spent_usd` null in the envelope.
+  Gap #3 needs actual wiring — Agent tool responses carry token
+  counts, nothing aggregates them.
+
+### Playbook/skill changes this run produced
+- **Skill Step 1b:** flip default. `match + R1 envelope provided by
+  the user → R2`. `match + no envelope → R1 (default, no block)`.
+  No blocking question; the user can always request R2 explicitly
+  and accept the fix_verifier degradation.
+- **Skill Step 4 + What NOT to do:** JSON envelope is internal state.
+  NOT rendered to the chat. Not persisted to disk (user explicitly
+  rejected `.reviews/` and `/tmp/*.json` persistence). Markdown is
+  the ship format; R2 re-invocations rely on user paste-back.
+- **Playbook §Judge step 6 + §Markdown summary:** aligned with the
+  skill. Envelope spec stays (internal contract for Fix Phase dev
+  agents); rendering is markdown-only.
+
+### Open questions for next run
+- **Gap #3 (budget accounting).** Still null. Wire it, or acknowledge
+  the field is aspirational and remove it from the envelope spec.
+- **R2 hand-off after the JSON-output fix.** Run 3 didn't reach Fix
+  Phase or R2. Next run that does needs to confirm Fix Phase dev
+  agents still receive the envelope via prompt context (no chat
+  render, no disk cache) and that a subsequent R2 invocation with
+  user-pasted R1 markdown fires the fix_verifier branch cleanly.
+- **Gap #6 (HC precision).** Run 3 had 1 HC finding (SignalR status=0
+  truthy-drop). Not enough to calibrate. Still open.
+- **Why the adversarial lens out-performed aligned 3-to-0 on
+  BLOCKINGs.** The refactor was intent-consistent; aligned read the
+  intent and didn't look hard at blast radius. Worth testing whether
+  an aligned-plus-adversarial prompt tweak (explicit "audit the
+  blast radius of intent-consistent refactors") closes the gap.
