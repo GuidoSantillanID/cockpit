@@ -79,6 +79,7 @@ markdown block and pause for user override.
 | `head` | Default `HEAD`. |
 | `path_filter` | From Step 1a answer, or skill argument, else ask. Default `**` only if no multi-component split exists. |
 | `files_changed` | `git diff --name-only <base>...<head> -- <path_filter>` piped to `wc -l`. |
+| `excluded_files` | Apply playbook §Generated-file exclusion. List the files and report the count. Reviewer prompts receive the diff with these stripped. |
 | `pass` | From Step 1b: `R1` or `R2`. |
 | `agents` | R1: aligned + adversarial + tests. R2: aligned + adversarial + fix_verifier. Skip any whose lens has no surface in the diff — record in `envelope.skipped_agents` with reason. |
 | `chunks` | **Default: no chunking** (one chunk per lens covering the full `path_filter`). Chunk only when `files_changed > 200` per agent, a prior run stalled on this diff, or the user explicitly requests it. See playbook §Run envelope → Chunking. Do NOT chunk by reviewer lens alone. |
@@ -95,7 +96,10 @@ cache). Agent-type mapping per playbook §R1 and §R2:
 
 **R1 pass:**
 - **aligned** → `superpowers:code-reviewer`. Receives intent context
-  (branch name, commit subjects, ticket).
+  (branch name, commit subjects, ticket). For refactors
+  (endpoint/signature/module renames), the prompt MUST include
+  playbook §R1 Aligned's blast-radius instruction — intent-alignment
+  blinds aligned to unchanged callers that break silently (Run 3).
 - **adversarial** → general-purpose. **Metadata-blind** — no branch
   name, no commits, no ticket.
 - **tests** → bash-capable general-purpose. Narrow scope: detect and

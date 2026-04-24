@@ -301,7 +301,13 @@ are either open or "closed-in-theory, pending next run's evidence."
 - **Gap #7 (under-scoping).** §Mandatory rules and §Fix Phase both
   include "grep for all instances in path_filter before reporting /
   fixing." Needs a run that tests whether this bloats findings with
-  false matches.
+  false matches. **Post-Run-3 tightening (2026-04-23):** rule upgraded
+  from prose to mechanical enforcement — reviewers whose finding
+  message implies a pattern ("across all X", "every Y", "systemic",
+  "N+ files") MUST emit `pattern_scope: { grep_command, files: [] }`;
+  judge drops non-enumerated pattern findings as `missing_enumeration`.
+  Still pending run evidence on whether this reduces under-scoping in
+  Fix Phase without bloating findings.
 - **Gap #8 (Fix Phase under-specified).** §Fix Phase now fully spec'd:
   parallel clusters with disjoint scope, TDD for every BLOCKING with a
   reproducible failure mode (not just UI crashes — Run 2 evidence),
@@ -311,6 +317,30 @@ are either open or "closed-in-theory, pending next run's evidence."
   the playbook (§Judge → Input) and skill (§Step 3). Needs a run that
   confirms the rule is actually followed. No stronger mitigation yet;
   if it's ignored again, escalate to a pre-dispatch check.
+
+**Closed-in-theory after Run 3 (2026-04-23) — pending validation:**
+- **Gap #10 (aligned blast-radius on refactors).** Run 3 evidence:
+  aligned missed 3/3 BLOCKINGs on a v4 endpoint migration because the
+  refactor was intent-consistent; bugs lived in unchanged callers.
+  Playbook §R1 Aligned now explicitly instructs blast-radius audit on
+  refactors (endpoint/signature/module renames). Skill Step 2 R1
+  aligned dispatch prompt references it. Pending: a run with a
+  refactor diff to confirm aligned now catches downstream-caller bugs.
+- **Gap #11 (barrel re-exports blind-spot).** Run 3 R2 judge wrongly
+  dropped 2 findings as `verification_failed` because grep did not
+  traverse `export * from '...'` chains. §Mandatory rules now lists
+  barrel re-exports alongside symlinks, path aliases, dynamic imports,
+  etc. §Judge → Process step 1 adds explicit barrel-chain guidance
+  for import-reachability verifications. Pending: a run with
+  import-reachability findings to confirm correct keep/drop.
+- **Gap #12 (generated-file noise).** Run 3: 4065-line
+  `types/generated.ts` (~50% of diff body by line count) reviewed by
+  all 3 agents, yielded zero findings. New §Generated-file exclusion
+  section defines detection heuristic (filename + first-line content)
+  and handling (`envelope.scope.excluded_files`). Skill Step 1c
+  includes the field in the pre-flight checklist. Pending: a run
+  with generated files to confirm token savings and that no
+  human-authored files are wrongly excluded.
 
 **Open — requires more run data:**
 - **Gap #6 (HC precision).** Still a one-run sample. Need ≥2 more
